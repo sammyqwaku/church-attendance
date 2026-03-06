@@ -1,21 +1,39 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { saveData, loadData, listenData } from "./firebase";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
-// ─── PERSISTENT STORAGE HOOK ─────────────────────────────────────
+// ─── FIREBASE REAL-TIME STORAGE HOOK ─────────────────────────────
+// Data is shared across ALL devices in real time via Firestore
 function useLocalStorage(key, initialValue) {
-  const [storedValue, setStoredValue] = useState(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : (typeof initialValue === "function" ? initialValue() : initialValue);
-    } catch { return typeof initialValue === "function" ? initialValue() : initialValue; }
-  });
-  const setValue = useCallback(value => {
-    try {
-      const valueToStore = typeof value === "function" ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch(e) { console.warn("localStorage error", e); }
-  }, [key, storedValue]);
+  const initVal = typeof initialValue === "function" ? initialValue() : initialValue;
+  const [storedValue, setStoredValue] = useState(initVal);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load initial data from Firebase
+  useEffect(() => {
+    loadData(key, initVal).then(val => {
+      setStoredValue(val);
+      setLoaded(true);
+    });
+  }, [key]);
+
+  // Listen for real-time updates from other devices
+  useEffect(() => {
+    if (!loaded) return;
+    const unsub = listenData(key, (val) => {
+      setStoredValue(val);
+    });
+    return () => unsub();
+  }, [key, loaded]);
+
+  const setValue = useCallback((value) => {
+    setStoredValue(prev => {
+      const valueToStore = typeof value === "function" ? value(prev) : value;
+      saveData(key, valueToStore); // save to Firebase
+      return valueToStore;
+    });
+  }, [key]);
+
   return [storedValue, setValue];
 }
 
@@ -1420,7 +1438,7 @@ export default function App(){
           <div>
             <h1>Church Attendance</h1>
             <div className="subtitle">{roleLabel} · {currentUser.name}</div>
-            <div style={{fontSize:"0.55rem",color:"rgba(255,255,255,0.4)",marginTop:1,letterSpacing:"0.5px"}}>💾 Data saved locally on this device</div>
+            <div style={{fontSize:"0.55rem",color:"rgba(255,255,255,0.4)",marginTop:1,letterSpacing:"0.5px"}}>🔥 Live data — synced across all devices</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:"1.5rem"}}>⛪</span>

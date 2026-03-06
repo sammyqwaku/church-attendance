@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { saveData, loadData, listenData } from "./firebase";
+import { saveData, loadData, listenData, deleteData } from "./firebase";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
 // ─── FIREBASE REAL-TIME STORAGE HOOK ─────────────────────────────
@@ -572,6 +572,7 @@ export default function App(){
   const [users,        setUsers]        = useLocalStorage("church_users",        initUsers);
   const [attendance,   setAttendance]   = useLocalStorage("church_attendance",   {});
   const [dailyReports, setDailyReports] = useLocalStorage("church_dailyreports", {});
+  const [submittedAtt, setSubmittedAtt] = useLocalStorage("church_submittedAtt", {}); // {groupId_date: true}
 
   // ── SESSION STATE (per-device, survives refresh but not shared) ─
   const [currentUser, setCurrentUserState] = useState(() => {
@@ -595,6 +596,11 @@ export default function App(){
   const [loginRole,    setLoginRole]    = useState(null);
   const [loginError,   setLoginError]   = useState("");
   const [checkInGroup, setCheckInGroup] = useState(null);
+
+  // ── CLEAN UP old Firebase currentUser doc (caused cross-device sign-out) ─
+  useEffect(() => {
+    deleteData("church_currentUser");
+  }, []);
 
   // ── SEED SAMPLE HISTORICAL DATA (for demo charts) ─────────────
   useEffect(()=>{
@@ -735,15 +741,62 @@ export default function App(){
   // ════════════════ ATTENDANCE TAB (leader only) ════════════════
   const AttendanceTab=()=>{
     const [exp,setExp]=useState(visibleGroups[0]?.id||null);
+    const [confirmGroup,setConfirmGroup]=useState(null);
+
+    const submitKey=(gid,date)=>`${gid}_${date}`;
+    const isSubmitted=(gid,date)=>!!submittedAtt[submitKey(gid,date)];
+
+    const handleSubmit=(group)=>{
+      const key=submitKey(group.id,selectedDate);
+      const stats=getGroupStats(group.id,selectedDate);
+      setSubmittedAtt(p=>({...p,[key]:{
+        submittedBy:currentUser.name,
+        groupName:group.name,
+        date:selectedDate,
+        present:stats.present,
+        total:stats.total,
+        submittedAt:new Date().toISOString(),
+      }}));
+      setConfirmGroup(null);
+      showAlert(`✅ ${group.name} attendance submitted to Pastor & Secretary!`);
+    };
+
     return(
       <div className="scroll-area">
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+
+        {/* Confirm submit modal */}
+        {confirmGroup&&(
+          <div className="modal-overlay" onClick={()=>setConfirmGroup(null)}>
+            <div className="modal" onClick={e=>e.stopPropagation()}>
+              <div className="modal-title">📤 Submit Attendance <span style={{cursor:"pointer"}} onClick={()=>setConfirmGroup(null)}>✕</span></div>
+              <div style={{textAlign:"center",padding:"10px 0 18px"}}>
+                <div style={{fontSize:"2.5rem",marginBottom:8}}>📋</div>
+                <div style={{fontFamily:"Playfair Display,serif",fontSize:"1rem",color:"var(--navy)",marginBottom:6}}>{confirmGroup.name} Group</div>
+                <div style={{fontSize:"0.82rem",color:"var(--muted)",marginBottom:4}}>{formatDate(selectedDate)}</div>
+                <div style={{fontSize:"0.9rem",fontWeight:700,color:"var(--navy)",margin:"12px 0"}}>
+                  {getGroupStats(confirmGroup.id,selectedDate).present} Present · {getGroupStats(confirmGroup.id,selectedDate).absent} Absent
+                </div>
+                <p style={{fontSize:"0.78rem",color:"var(--red)",background:"#FFF5F5",padding:"8px 12px",borderRadius:8,marginBottom:16}}>
+                  ⚠️ Once submitted, you <strong>cannot edit</strong> this attendance. The Pastor and Secretary will be notified.
+                </p>
+                <div style={{display:"flex",gap:8}}>
+                  <button className="btn btn-outline" style={{flex:1}} onClick={()=>setConfirmGroup(null)}>Cancel</button>
+                  <button className="btn btn-success" style={{flex:1}} onClick={()=>handleSubmit(confirmGroup)}>✅ Confirm & Send</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {visibleGroups.map(group=>{
           const stats=getGroupStats(group.id,selectedDate);
           const gm=members.filter(m=>m.groupId===group.id);
           const open=exp===group.id;
+          const submitted=isSubmitted(group.id,selectedDate);
+          const subInfo=submittedAtt[submitKey(group.id,selectedDate)];
           return(
-            <div key={group.id} className="card" style={{padding:0,overflow:"hidden"}}>
+            <div key={group.id} className="card" style={{padding:0,overflow:"hidden",border:submitted?"2px solid var(--green)":""}}>
               <div style={{padding:"11px 14px",background:group.color+"15",borderBottom:"1px solid "+group.color+"30",cursor:"pointer",display:"flex",alignItems:"center",gap:9}}
                 onClick={()=>setExp(open?null:group.id)}>
                 <div style={{width:11,height:11,borderRadius:"50%",background:group.color,flexShrink:0}}/>
@@ -751,27 +804,59 @@ export default function App(){
                   <div style={{fontFamily:"Playfair Display,serif",fontWeight:700,color:"var(--navy)",fontSize:"0.92rem"}}>{group.name}</div>
                   <div style={{fontSize:"0.68rem",color:"var(--muted)"}}>{stats.present}/{stats.total} present · {stats.pct}%</div>
                 </div>
-                <span className="badge badge-green">{stats.present}✓</span>
-                {stats.absent>0&&<span className="badge badge-red">{stats.absent}✗</span>}
+                {submitted
+                  ? <span className="badge badge-green">✅ Submitted</span>
+                  : <><span className="badge badge-green">{stats.present}✓</span>{stats.absent>0&&<span className="badge badge-red">{stats.absent}✗</span>}</>
+                }
                 <span style={{color:"var(--muted)",fontSize:"0.9rem"}}>{open?"▲":"▼"}</span>
               </div>
               {open&&(
                 <div style={{padding:"0 14px 12px"}}>
-                  <div style={{padding:"7px 0 3px",display:"flex",justifyContent:"flex-end"}}>
-                    <button className="btn btn-success btn-sm" onClick={()=>markAllPresent(group.id)}>Mark All Present</button>
-                  </div>
-                  {gm.map(m=>(
-                    <div className="member-row" key={m.id}>
-                      <div className="avatar" style={{background:`linear-gradient(135deg,${group.color},var(--navy))`}}>{initials(m.name)}</div>
-                      <div className="member-info">
-                        <div className="member-name">{m.name}</div>
-                        <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                  {submitted?(
+                    <>
+                      <div style={{background:"#D5F5E3",borderRadius:8,padding:"10px 12px",margin:"10px 0",textAlign:"center"}}>
+                        <div style={{color:"var(--green)",fontWeight:700,fontSize:"0.85rem"}}>✅ Attendance Submitted</div>
+                        <div style={{fontSize:"0.72rem",color:"var(--muted)",marginTop:3}}>
+                          Sent by {subInfo?.submittedBy} · {subInfo?.present}/{subInfo?.total} present
+                        </div>
                       </div>
-                      <button className={`att-btn ${isPresent(selectedDate,m.id)?"att-present":"att-absent"}`} onClick={()=>toggleAtt(m.id)}>
-                        {isPresent(selectedDate,m.id)?"✓ Present":"Absent"}
+                      <p style={{fontWeight:700,fontSize:"0.8rem",color:"var(--navy)",margin:"10px 0 6px"}}>Attendance Record (Read-only)</p>
+                      {gm.map(m=>(
+                        <div className="member-row" key={m.id} style={{opacity:0.85}}>
+                          <div className="avatar" style={{background:`linear-gradient(135deg,${group.color},var(--navy))`}}>{initials(m.name)}</div>
+                          <div className="member-info">
+                            <div className="member-name">{m.name}</div>
+                            <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                          </div>
+                          <span className={`badge ${isPresent(selectedDate,m.id)?"badge-green":"badge-red"}`} style={{fontSize:"0.72rem",padding:"4px 10px"}}>
+                            {isPresent(selectedDate,m.id)?"✓ Present":"✗ Absent"}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  ):(
+                    <>
+                      <div style={{padding:"7px 0 3px",display:"flex",justifyContent:"flex-end"}}>
+                        <button className="btn btn-success btn-sm" onClick={()=>markAllPresent(group.id)}>Mark All Present</button>
+                      </div>
+                      {gm.map(m=>(
+                        <div className="member-row" key={m.id}>
+                          <div className="avatar" style={{background:`linear-gradient(135deg,${group.color},var(--navy))`}}>{initials(m.name)}</div>
+                          <div className="member-info">
+                            <div className="member-name">{m.name}</div>
+                            <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                          </div>
+                          <button className={`att-btn ${isPresent(selectedDate,m.id)?"att-present":"att-absent"}`} onClick={()=>toggleAtt(m.id)}>
+                            {isPresent(selectedDate,m.id)?"✓ Present":"Absent"}
+                          </button>
+                        </div>
+                      ))}
+                      <button className="btn btn-navy btn-full" style={{marginTop:12}}
+                        onClick={()=>setConfirmGroup(group)}>
+                        📤 Submit Attendance to Pastor & Secretary
                       </button>
-                    </div>
-                  ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -818,9 +903,35 @@ export default function App(){
   // ════════════════ SEC TOTALS ══════════════════════════════════
   const SecTotalsTab=()=>{
     const total=getTotalStats(selectedDate);
+    // Find today's submissions
+    const todaySubmissions=Object.values(submittedAtt).filter(s=>s.date===selectedDate);
+    const allGroupsSubmitted=groups.length>0&&groups.every(g=>!!submittedAtt[`${g.id}_${selectedDate}`]);
     return(
       <div className="scroll-area">
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+
+        {/* Submission status banner */}
+        {todaySubmissions.length>0&&(
+          <div style={{margin:"8px 12px",background:allGroupsSubmitted?"#D5F5E3":"#FEF9EF",border:`1.5px solid ${allGroupsSubmitted?"var(--green)":"var(--gold)"}`,borderRadius:10,padding:"10px 14px"}}>
+            <div style={{fontWeight:700,fontSize:"0.82rem",color:allGroupsSubmitted?"var(--green)":"var(--gold)",marginBottom:6}}>
+              {allGroupsSubmitted?"✅ All Groups Submitted":"📥 Attendance Submissions"}
+            </div>
+            {groups.map(g=>{
+              const sub=submittedAtt[`${g.id}_${selectedDate}`];
+              return(
+                <div key={g.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,fontSize:"0.78rem"}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+                  <span style={{flex:1,color:"var(--navy)",fontWeight:600}}>{g.name}</span>
+                  {sub
+                    ? <span className="badge badge-green" style={{fontSize:"0.62rem"}}>✅ {sub.present}/{sub.total} · by {sub.submittedBy}</span>
+                    : <span className="badge badge-gray" style={{fontSize:"0.62rem"}}>⏳ Pending</span>
+                  }
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className="summary-banner">
           <h3>Live Attendance — {formatDate(selectedDate)}</h3>
           <div className="summary-grid">
@@ -1123,6 +1234,10 @@ export default function App(){
     const [addRole,setAddRole]=useState("leader");
     const [addGid,setAddGid]=useState(groups[0]?.id||"");
     const [showForm,setShowForm]=useState(false);
+    const [pinModal,setPinModal]=useState(null); // {user} being edited
+    const [newPin,setNewPin]=useState("");
+    const [confirmPin,setConfirmPin]=useState("");
+    const [pinSuccess,setPinSuccess]=useState("");
 
     const saveUser=()=>{
       if(!addName.trim()||addPin.length<4){showAlert("Name and 4-digit PIN required","error");return;}
@@ -1134,12 +1249,84 @@ export default function App(){
       if(id===currentUser.id){showAlert("Cannot delete yourself","error");return;}
       setUsers(p=>p.filter(u=>u.id!==id));showAlert("User removed","info");
     };
+    const openPinModal=(user)=>{setPinModal(user);setNewPin("");setConfirmPin("");setPinSuccess("");};
+    const savePin=()=>{
+      if(newPin.length<4){showAlert("PIN must be at least 4 digits","error");return;}
+      if(newPin!==confirmPin){showAlert("PINs do not match","error");return;}
+      if(users.find(u=>u.pin===newPin&&u.id!==pinModal.id)){showAlert("PIN already in use. Choose another.","error");return;}
+      setUsers(p=>p.map(u=>u.id===pinModal.id?{...u,pin:newPin}:u));
+      // If pastor changed their own PIN, update session too
+      if(pinModal.id===currentUser.id){
+        const updated={...currentUser,pin:newPin};
+        try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
+      }
+      setPinSuccess(`✅ PIN for ${pinModal.name} has been changed successfully!`);
+      setNewPin("");setConfirmPin("");
+    };
 
     const leaders=users.filter(u=>u.role==="leader");
     const secretaries=users.filter(u=>u.role==="secretary");
+    const admins=users.filter(u=>u.role==="admin");
+
+    const UserRow=({u,avatarStyle,badge})=>(
+      <div className="member-row" key={u.id} style={{flexWrap:"wrap",gap:6}}>
+        <div className="avatar" style={avatarStyle}>{initials(u.name)}</div>
+        <div className="member-info">
+          <div className="member-name">{u.name}</div>
+          <div style={{display:"flex",gap:4,marginTop:2,flexWrap:"wrap"}}>
+            {badge}
+            <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>PIN: {"•".repeat(u.pin.length)}</span>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:5}}>
+          <button className="btn btn-sm" style={{background:"#EEF2FF",color:"var(--navy)",border:"1px solid #C5CAE9",fontSize:"0.68rem"}}
+            onClick={()=>openPinModal(u)}>🔑 PIN</button>
+          {u.id!==currentUser.id&&(
+            <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteUser(u.id)}>✕</button>
+          )}
+        </div>
+      </div>
+    );
 
     return(
       <div className="scroll-area">
+        {/* PIN Change Modal */}
+        {pinModal&&(
+          <div className="modal-overlay" onClick={()=>setPinModal(null)}>
+            <div className="modal" onClick={e=>e.stopPropagation()}>
+              <div className="modal-title">🔑 Change PIN <span style={{cursor:"pointer"}} onClick={()=>setPinModal(null)}>✕</span></div>
+              <div style={{textAlign:"center",marginBottom:14}}>
+                <div className="avatar" style={{margin:"0 auto 8px",width:44,height:44,fontSize:"1rem",background:"linear-gradient(135deg,var(--gold),var(--navy))"}}>{initials(pinModal.name)}</div>
+                <div style={{fontWeight:700,color:"var(--navy)"}}>{pinModal.name}</div>
+                <div style={{fontSize:"0.72rem",color:"var(--muted)",textTransform:"capitalize"}}>{pinModal.role}</div>
+              </div>
+              {pinSuccess?(
+                <div style={{background:"#D5F5E3",border:"1.5px solid var(--green)",borderRadius:10,padding:"14px",textAlign:"center",marginBottom:12}}>
+                  <div style={{fontSize:"1.6rem",marginBottom:6}}>✅</div>
+                  <div style={{color:"var(--green)",fontWeight:700,fontSize:"0.88rem"}}>{pinSuccess}</div>
+                  <button className="btn btn-navy btn-full" style={{marginTop:12}} onClick={()=>setPinModal(null)}>Done</button>
+                </div>
+              ):(
+                <>
+                  <label style={{fontSize:"0.75rem",fontWeight:700,color:"#555",display:"block",marginBottom:5}}>NEW PIN</label>
+                  <input className="input" type="password" inputMode="numeric" placeholder="Enter new PIN" maxLength={6}
+                    value={newPin} onChange={e=>setNewPin(e.target.value)}
+                    style={{fontSize:"1.1rem",letterSpacing:"6px",textAlign:"center"}}/>
+                  <label style={{fontSize:"0.75rem",fontWeight:700,color:"#555",display:"block",marginBottom:5}}>CONFIRM NEW PIN</label>
+                  <input className="input" type="password" inputMode="numeric" placeholder="Re-enter new PIN" maxLength={6}
+                    value={confirmPin} onChange={e=>setConfirmPin(e.target.value)}
+                    style={{fontSize:"1.1rem",letterSpacing:"6px",textAlign:"center"}}
+                    onKeyDown={e=>e.key==="Enter"&&savePin()}/>
+                  <div style={{display:"flex",gap:8,marginTop:4}}>
+                    <button className="btn btn-outline" style={{flex:1}} onClick={()=>setPinModal(null)}>Cancel</button>
+                    <button className="btn btn-navy" style={{flex:1}} onClick={savePin}>Save PIN</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div style={{margin:"10px 12px"}}>
           <button className="btn btn-primary btn-full" onClick={()=>setShowForm(!showForm)}>
             {showForm?"✕ Cancel":"+ Add Leader or Secretary"}
@@ -1164,23 +1351,24 @@ export default function App(){
           </div>
         )}
 
+        <p className="section-label">Admin / Pastor</p>
+        <div className="card">
+          {admins.map(u=>(
+            <UserRow key={u.id} u={u}
+              avatarStyle={{background:"linear-gradient(135deg,var(--gold),var(--navy))"}}
+              badge={<span className="badge badge-gold" style={{fontSize:"0.6rem"}}>✝️ Pastor</span>}/>
+          ))}
+        </div>
+
         <p className="section-label">Group Leaders ({leaders.length})</p>
         <div className="card">
           {leaders.length===0&&<div style={{textAlign:"center",color:"var(--muted)",padding:14,fontSize:"0.82rem"}}>No leaders added yet</div>}
           {leaders.map(u=>{
             const grp=groups.find(g=>g.id===u.groupId);
             return(
-              <div className="member-row" key={u.id}>
-                <div className="avatar" style={{background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`}}>{initials(u.name)}</div>
-                <div className="member-info">
-                  <div className="member-name">{u.name}</div>
-                  <div style={{display:"flex",gap:4,marginTop:2}}>
-                    <span className="badge badge-blue" style={{fontSize:"0.6rem"}}>{grp?.name||"No group"}</span>
-                    <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>PIN: {u.pin}</span>
-                  </div>
-                </div>
-                <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteUser(u.id)}>✕</button>
-              </div>
+              <UserRow key={u.id} u={u}
+                avatarStyle={{background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`}}
+                badge={<span className="badge badge-blue" style={{fontSize:"0.6rem"}}>{grp?.name||"No group"}</span>}/>
             );
           })}
         </div>
@@ -1189,30 +1377,9 @@ export default function App(){
         <div className="card">
           {secretaries.length===0&&<div style={{textAlign:"center",color:"var(--muted)",padding:14,fontSize:"0.82rem"}}>No secretary added yet</div>}
           {secretaries.map(u=>(
-            <div className="member-row" key={u.id}>
-              <div className="avatar" style={{background:"linear-gradient(135deg,var(--purple),var(--navy))"}}>{initials(u.name)}</div>
-              <div className="member-info">
-                <div className="member-name">{u.name}</div>
-                <div style={{display:"flex",gap:4,marginTop:2}}>
-                  <span className="badge badge-purple" style={{fontSize:"0.6rem"}}>Secretary</span>
-                  <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>PIN: {u.pin}</span>
-                </div>
-              </div>
-              <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteUser(u.id)}>✕</button>
-            </div>
-          ))}
-        </div>
-
-        <p className="section-label">Admin</p>
-        <div className="card">
-          {users.filter(u=>u.role==="admin").map(u=>(
-            <div className="member-row" key={u.id}>
-              <div className="avatar" style={{background:"linear-gradient(135deg,var(--gold),var(--navy))"}}>{initials(u.name)}</div>
-              <div className="member-info">
-                <div className="member-name">{u.name}</div>
-                <span className="badge badge-gold" style={{fontSize:"0.6rem"}}>✝️ Pastor / Admin</span>
-              </div>
-            </div>
+            <UserRow key={u.id} u={u}
+              avatarStyle={{background:"linear-gradient(135deg,var(--purple),var(--navy))"}}
+              badge={<span className="badge badge-purple" style={{fontSize:"0.6rem"}}>Secretary</span>}/>
           ))}
         </div>
       </div>

@@ -34,7 +34,7 @@ function useLocalStorage(key, initialValue) {
     });
   }, [key]);
 
-  return [storedValue, setValue, loaded];
+  return [storedValue, setValue];
 }
 
 // ─── REAL QR CODE using qrcode-generator ─────────────────────────
@@ -573,8 +573,20 @@ export default function App(){
   const [attendance,   setAttendance]   = useLocalStorage("church_attendance",   {});
   const [dailyReports, setDailyReports] = useLocalStorage("church_dailyreports", {});
 
-  // ── SESSION STATE ──────────────────────────────────────────────
-  const [currentUser,  setCurrentUser, userLoaded]  = useLocalStorage("church_currentUser", null);
+  // ── SESSION STATE (per-device, survives refresh but not shared) ─
+  const [currentUser, setCurrentUserState] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("church_currentUser");
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const setCurrentUser = (user) => {
+    try {
+      if (user) sessionStorage.setItem("church_currentUser", JSON.stringify(user));
+      else sessionStorage.removeItem("church_currentUser");
+    } catch {}
+    setCurrentUserState(user);
+  };
   const [activeTab,    setActiveTab]    = useState("dashboard");
   const [modal,        setModal]        = useState(null);
   const [alert,        setAlert]        = useState(null);
@@ -634,30 +646,6 @@ export default function App(){
         <style>{STYLE}</style>
         <GroupCheckIn group={checkInGroup} members={members} attendance={attendance}
           setAttendance={setAttendance} onBack={()=>setCheckInGroup(null)}/>
-      </>
-    );
-  }
-
-  // ── LOADING SCREEN (while Firebase loads session) ─────────────
-  if(!userLoaded){
-    return(
-      <>
-        <style>{STYLE}</style>
-        <style>{`@keyframes pulse{0%,100%{transform:scale(0.7);opacity:0.4;}50%{transform:scale(1.2);opacity:1;}}`}</style>
-        <div className="login-wrap" style={{gap:16}}>
-          <div style={{fontSize:"3rem"}}>⛪</div>
-          <div style={{fontFamily:"'Playfair Display',serif",color:"white",fontSize:"1.3rem",letterSpacing:"0.5px"}}>Church Attendance</div>
-          <div style={{color:"rgba(255,255,255,0.65)",fontSize:"0.82rem"}}>Loading your session…</div>
-          <div style={{display:"flex",gap:7,marginTop:8}}>
-            {[0,1,2].map(i=>(
-              <div key={i} style={{
-                width:10,height:10,borderRadius:"50%",
-                background:"var(--gold)",
-                animation:`pulse 1.2s ease-in-out ${i*0.22}s infinite`
-              }}/>
-            ))}
-          </div>
-        </div>
       </>
     );
   }

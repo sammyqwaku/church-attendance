@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc } from "firebase/firestore";
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -38,6 +38,13 @@ export function listenData(key, callback) {
       try { callback(JSON.parse(snap.data().value)); } catch(e) {}
     }
   });
+}
+
+// ── Helper: delete a doc (used to clean up cross-device session data) ──
+export async function deleteData(key) {
+  try {
+    await deleteDoc(doc(db, "churchdata", key));
+  } catch (e) { console.error("Firebase delete error", e); }
 }
 
 export { db };

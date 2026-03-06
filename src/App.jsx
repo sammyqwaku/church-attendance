@@ -108,26 +108,126 @@ const STYLE = `
     --gold:#C9973A; --gold-light:#E8C070; --navy:#1A2744; --navy-mid:#243260;
     --cream:#FDF8F0; --cream-dark:#F0E8D8; --red:#C0392B; --green:#27AE60;
     --purple:#7D3C98; --teal:#148F77; --text:#2C2C2C; --muted:#7A7A7A;
+    --sidebar-w:220px;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'Lato',sans-serif;background:var(--cream);color:var(--text);min-height:100vh;}
   h1,h2,h3{font-family:'Playfair Display',serif;}
-  .app{max-width:480px;margin:0 auto;min-height:100vh;}
 
-  .header{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 100%);color:white;padding:16px 16px 12px;
-    display:flex;align-items:center;justify-content:space-between;
+  /* ── MOBILE LAYOUT (default) ─────────────────────────────────── */
+  .app{max-width:100%;min-height:100vh;display:flex;flex-direction:column;}
+  .app-body{display:flex;flex-direction:column;flex:1;}
+  .main-content{flex:1;min-width:0;}
+
+  /* Mobile: top header */
+  .header{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 100%);color:white;
+    padding:14px 16px 10px;display:flex;align-items:center;justify-content:space-between;
     box-shadow:0 4px 20px rgba(26,39,68,0.3);position:sticky;top:0;z-index:100;}
   .header h1{font-size:1.1rem;color:var(--gold-light);letter-spacing:0.5px;}
   .header .subtitle{font-size:0.65rem;color:rgba(255,255,255,0.6);margin-top:1px;letter-spacing:0.8px;text-transform:uppercase;}
+  .header-logo{display:none;}
 
-  .nav{display:flex;background:var(--navy);border-bottom:2px solid var(--gold);overflow-x:auto;}
+  /* Mobile: horizontal scrolling tabs */
+  .nav{display:flex;background:var(--navy);border-bottom:2px solid var(--gold);overflow-x:auto;flex-shrink:0;}
   .nav::-webkit-scrollbar{display:none;}
   .nav button{flex-shrink:0;padding:9px 10px;border:none;background:transparent;
     color:rgba(255,255,255,0.5);font-family:'Lato',sans-serif;
     font-size:0.6rem;font-weight:700;letter-spacing:0.5px;
     text-transform:uppercase;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
   .nav button.active{color:var(--gold-light);border-bottom:2px solid var(--gold);margin-bottom:-2px;}
+  .nav-sidebar{display:none;}
 
+  .scroll-area{overflow-y:auto;max-height:calc(100vh - 115px);padding-bottom:24px;}
+
+  /* ── DESKTOP LAYOUT (768px+) ─────────────────────────────────── */
+  @media(min-width:768px){
+    .app{flex-direction:column;}
+    .app-body{flex-direction:row;min-height:calc(100vh - 60px);}
+
+    /* Slim top header on desktop */
+    .header{padding:0 24px;height:60px;position:fixed;top:0;left:0;right:0;z-index:200;}
+    .header h1{font-size:1.2rem;}
+    .header .subtitle{font-size:0.68rem;}
+    .header-logo{display:flex;align-items:center;gap:10px;}
+
+    /* Hide mobile nav, show sidebar */
+    .nav{display:none;}
+    .nav-sidebar{
+      display:flex;flex-direction:column;
+      width:var(--sidebar-w);flex-shrink:0;
+      background:var(--navy);
+      border-right:2px solid var(--gold);
+      position:fixed;top:60px;left:0;bottom:0;
+      overflow-y:auto;padding:16px 0 24px;z-index:100;
+    }
+    .nav-sidebar::-webkit-scrollbar{width:4px;}
+    .nav-sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px;}
+    .nav-sidebar button{
+      display:flex;align-items:center;gap:10px;
+      padding:11px 20px;border:none;background:transparent;
+      color:rgba(255,255,255,0.55);font-family:'Lato',sans-serif;
+      font-size:0.78rem;font-weight:700;letter-spacing:0.4px;
+      text-transform:uppercase;cursor:pointer;transition:all 0.2s;
+      text-align:left;width:100%;border-left:3px solid transparent;
+    }
+    .nav-sidebar button:hover{color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.06);}
+    .nav-sidebar button.active{
+      color:var(--gold-light);background:rgba(201,151,58,0.12);
+      border-left:3px solid var(--gold);
+    }
+    .nav-sidebar .nav-section{
+      font-size:0.55rem;letter-spacing:1.2px;text-transform:uppercase;
+      color:rgba(255,255,255,0.25);padding:14px 20px 4px;font-weight:700;
+    }
+
+    /* Main content shifts right of sidebar */
+    .main-content{margin-left:var(--sidebar-w);margin-top:60px;flex:1;min-width:0;}
+
+    /* Wider, grid-based layouts on desktop */
+    .scroll-area{max-height:calc(100vh - 60px);overflow-y:auto;padding-bottom:32px;}
+    .card{margin:12px 20px;padding:20px;border-radius:14px;}
+    .card-title{font-size:1.05rem;margin-bottom:14px;padding-bottom:10px;}
+    .stats-row{margin:12px 20px;gap:12px;}
+    .stat-box{padding:16px 10px;border-radius:12px;}
+    .stat-num{font-size:1.8rem;}
+    .stat-label{font-size:0.65rem;}
+    .section-label{margin:16px 20px 6px;font-size:0.7rem;}
+    .summary-banner{margin:12px 20px;padding:20px;border-radius:16px;}
+    .summary-num{font-size:1.8rem;}
+    .demo-grid{margin:0 20px 8px;grid-template-columns:repeat(4,1fr);gap:12px;}
+    .demo-box{padding:14px 16px;}
+    .demo-val{font-size:1.5rem;}
+    .alert{margin:10px 20px;}
+    .member-row{padding:11px 0;}
+    .member-name{font-size:0.95rem;}
+    .avatar{width:40px;height:40px;font-size:0.9rem;}
+    .btn{font-size:0.88rem;padding:11px 18px;}
+    .btn-sm{font-size:0.76rem;padding:6px 13px;}
+    .input,.select{font-size:0.92rem;padding:10px 13px;}
+
+    /* Desktop: cards in 2-column grid for some tabs */
+    .desktop-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+    .desktop-grid .card{margin:12px;}
+
+    /* Modal centered on desktop */
+    .modal-overlay{align-items:center;}
+    .modal{border-radius:16px;max-width:520px;max-height:85vh;}
+    @keyframes slideUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+  }
+
+  @media(min-width:1100px){
+    :root{--sidebar-w:240px;}
+    .nav-sidebar button{font-size:0.82rem;padding:12px 24px;}
+    .card{margin:14px 28px;padding:24px;}
+    .stats-row{margin:14px 28px;}
+    .section-label{margin:18px 28px 8px;}
+    .summary-banner{margin:14px 28px;}
+    .demo-grid{margin:0 28px 10px;grid-template-columns:repeat(4,1fr);}
+    .alert{margin:12px 28px;}
+    .demo-box{padding:16px 18px;}
+  }
+
+  /* ── SHARED STYLES ───────────────────────────────────────────── */
   .card{background:white;border-radius:12px;padding:14px;margin:10px 12px;
     box-shadow:0 2px 12px rgba(0,0,0,0.07);border:1px solid var(--cream-dark);}
   .card-title{font-family:'Playfair Display',serif;font-size:0.95rem;color:var(--navy);
@@ -139,6 +239,7 @@ const STYLE = `
   .btn-primary{background:var(--gold);color:white;}
   .btn-primary:hover{background:#b8862e;}
   .btn-navy{background:var(--navy);color:white;}
+  .btn-navy:hover{background:var(--navy-mid);}
   .btn-purple{background:var(--purple);color:white;}
   .btn-teal{background:var(--teal);color:white;}
   .btn-success{background:var(--green);color:white;}
@@ -169,7 +270,7 @@ const STYLE = `
   .member-name{font-weight:700;font-size:0.88rem;}
   .member-sub{font-size:0.7rem;color:var(--muted);}
 
-  .att-btn{padding:6px 12px;border-radius:20px;font-size:0.72rem;font-weight:700;border:2px solid;
+  .att-btn{padding:6px 14px;border-radius:20px;font-size:0.72rem;font-weight:700;border:2px solid;
     cursor:pointer;transition:all 0.15s;font-family:'Lato',sans-serif;}
   .att-present{background:var(--green);border-color:var(--green);color:white;}
   .att-absent{background:white;border-color:#ccc;color:#aaa;}
@@ -182,12 +283,12 @@ const STYLE = `
 
   .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     background:linear-gradient(160deg,var(--navy) 0%,var(--navy-mid) 55%,var(--gold) 100%);padding:30px 20px;}
-  .login-card{background:white;border-radius:20px;padding:28px 22px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+  .login-card{background:white;border-radius:20px;padding:28px 22px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
   .login-logo{text-align:center;margin-bottom:20px;}
   .login-logo .cross{font-size:2.6rem;}
   .login-logo h2{font-family:'Playfair Display',serif;color:var(--navy);font-size:1.35rem;}
   .login-logo p{color:var(--muted);font-size:0.78rem;margin-top:3px;}
-  .role-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+  .role-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;}
   .role-btn{padding:10px 6px;border:2px solid var(--cream-dark);border-radius:10px;background:white;
     cursor:pointer;text-align:center;transition:all 0.15s;font-family:'Lato',sans-serif;}
   .role-btn.selected{border-color:var(--gold);background:#FEF9EF;}
@@ -202,9 +303,8 @@ const STYLE = `
   .section-label{font-size:0.65rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:14px 12px 4px;}
   .progress-bar{height:7px;background:var(--cream-dark);border-radius:4px;overflow:hidden;}
   .progress-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--gold),var(--gold-light));transition:width 0.5s ease;}
-  .scroll-area{overflow-y:auto;max-height:calc(100vh - 160px);padding-bottom:24px;}
 
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:flex-end;justify-content:center;z-index:200;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:flex-end;justify-content:center;z-index:300;}
   .modal{background:white;border-radius:20px 20px 0 0;padding:22px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;animation:slideUp 0.25s ease;}
   @keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
   .modal-title{font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--navy);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;}
@@ -232,7 +332,7 @@ const STYLE = `
   /* Group QR check-in page */
   .checkin-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     background:linear-gradient(160deg,var(--navy) 0%,var(--navy-mid) 60%,var(--gold) 100%);padding:24px 20px;}
-  .checkin-card{background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35);}
+  .checkin-card{background:white;border-radius:20px;padding:28px 24px;width:100%;max-width:400px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35);}
   .checkin-card h2{font-family:'Playfair Display',serif;color:var(--navy);font-size:1.3rem;margin-bottom:4px;}
   .checkin-card p{color:var(--muted);font-size:0.8rem;margin-bottom:18px;}
 
@@ -241,6 +341,8 @@ const STYLE = `
     .no-print{display:none!important;}
     .print-only{display:block!important;}
     body{background:white;}
+    .nav-sidebar,.header{display:none!important;}
+    .main-content{margin:0!important;}
     .print-report{font-family:'Lato',sans-serif;max-width:700px;margin:0 auto;padding:20px;}
     .print-report h1{font-family:'Playfair Display',serif;color:#1A2744;font-size:1.5rem;border-bottom:2px solid #C9973A;padding-bottom:8px;margin-bottom:16px;}
     .print-report h2{font-family:'Playfair Display',serif;font-size:1.1rem;color:#1A2744;margin:14px 0 6px;}
@@ -1609,40 +1711,94 @@ export default function App(){
   // ════════════════ RENDER ══════════════════════════════════════
   const roleLabel=isAdmin?"Pastor / Admin":isSecretary?"Church Secretary":`Leader · ${myGroup?.name||""}`;
 
+  // Build sidebar nav groups for desktop
+  const navSections = isAdmin
+    ? [
+        { label: "Overview",   items: tabs.filter(t=>["dashboard","charts"].includes(t.id)) },
+        { label: "Secretary",  items: tabs.filter(t=>["sec-totals","sec-report","breakdown","history"].includes(t.id)) },
+        { label: "Admin",      items: tabs.filter(t=>["members","users","qrcodes"].includes(t.id)) },
+      ]
+    : isSecretary
+    ? [
+        { label: "Reports",    items: tabs.filter(t=>["sec-totals","sec-report","breakdown","history"].includes(t.id)) },
+        { label: "Trends",     items: tabs.filter(t=>["charts"].includes(t.id)) },
+      ]
+    : [
+        { label: "My Group",   items: tabs.filter(t=>["attendance","dashboard","charts"].includes(t.id)) },
+      ];
+
   return(
     <>
       <style>{STYLE}</style>
       <div className="app">
+
+        {/* ── TOP HEADER (visible on all screen sizes) ── */}
         <div className="header">
-          <div>
-            <h1>Church Attendance</h1>
-            <div className="subtitle">{roleLabel} · {currentUser.name}</div>
-            <div style={{fontSize:"0.55rem",color:"rgba(255,255,255,0.4)",marginTop:1,letterSpacing:"0.5px"}}>🔥 Live data — synced across all devices</div>
+          <div className="header-logo">
+            <span style={{fontSize:"1.6rem"}}>⛪</span>
+            <div>
+              <h1>Church Attendance</h1>
+              <div className="subtitle">{roleLabel}</div>
+            </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:"1.5rem"}}>⛪</span>
-            <button className="btn btn-sm" style={{background:"rgba(255,255,255,0.15)",color:"white",fontSize:"0.68rem"}} onClick={()=>setCurrentUser(null)}>Sign Out</button>
+          {/* Mobile: show title inline */}
+          <div style={{display:"flex",flexDirection:"column"}} className="no-print">
+            <h1 style={{fontSize:"1rem",color:"var(--gold-light)"}}>⛪ Church Attendance</h1>
+            <div className="subtitle">{currentUser.name}</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{textAlign:"right",display:"none"}} className="desktop-user">
+              <div style={{fontSize:"0.82rem",fontWeight:700,color:"white"}}>{currentUser.name}</div>
+              <div style={{fontSize:"0.62rem",color:"rgba(255,255,255,0.5)"}}>🔥 Live sync</div>
+            </div>
+            <button className="btn btn-sm" style={{background:"rgba(255,255,255,0.15)",color:"white",fontSize:"0.68rem",border:"1px solid rgba(255,255,255,0.2)"}} onClick={()=>setCurrentUser(null)}>Sign Out</button>
           </div>
         </div>
 
-        <div className="nav">
-          {tabs.map(t=>(
-            <button key={t.id} className={activeTab===t.id?"active":""} onClick={()=>setActiveTab(t.id)}>{t.label}</button>
-          ))}
+        <div className="app-body">
+          {/* ── DESKTOP SIDEBAR ── */}
+          <nav className="nav-sidebar no-print">
+            <div style={{padding:"10px 20px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
+              <div style={{fontSize:"0.68rem",color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.8px"}}>{roleLabel}</div>
+              <div style={{fontSize:"0.9rem",fontWeight:700,color:"white",marginTop:2}}>{currentUser.name}</div>
+              <div style={{fontSize:"0.58rem",color:"rgba(255,255,255,0.35)",marginTop:2}}>🔥 Live synced</div>
+            </div>
+            {navSections.map(section=>(
+              <div key={section.label}>
+                <div className="nav-section">{section.label}</div>
+                {section.items.map(t=>(
+                  <button key={t.id} className={activeTab===t.id?"active":""} onClick={()=>setActiveTab(t.id)}>
+                    <span style={{fontSize:"1rem"}}>{t.label.split(" ")[0]}</span>
+                    <span>{t.label.split(" ").slice(1).join(" ")}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+
+          {/* ── MOBILE HORIZONTAL NAV ── */}
+          <div className="nav no-print">
+            {tabs.map(t=>(
+              <button key={t.id} className={activeTab===t.id?"active":""} onClick={()=>setActiveTab(t.id)}>{t.label}</button>
+            ))}
+          </div>
+
+          {/* ── MAIN CONTENT ── */}
+          <div className="main-content">
+            {alert&&<div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
+
+            {activeTab==="attendance"  && isLeader    && <AttendanceTab/>}
+            {activeTab==="dashboard"   && (isAdmin||isLeader) && <DashboardTab/>}
+            {activeTab==="sec-totals"  && (isAdmin||isSecretary) && <SecTotalsTab/>}
+            {activeTab==="sec-report"  && (isAdmin||isSecretary) && <SecReportTab/>}
+            {activeTab==="breakdown"   && (isAdmin||isSecretary) && <BreakdownTab/>}
+            {activeTab==="history"     && (isAdmin||isSecretary) && <HistoryTab/>}
+            {activeTab==="members"     && isAdmin      && <MembersTab/>}
+            {activeTab==="users"       && isAdmin      && <UsersTab/>}
+            {activeTab==="qrcodes"     && isAdmin      && <QRCodesTab/>}
+            {activeTab==="charts"      && <ChartsTab/>}
+          </div>
         </div>
-
-        {alert&&<div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
-
-        {activeTab==="attendance"  && isLeader    && <AttendanceTab/>}
-        {activeTab==="dashboard"   && (isAdmin||isLeader) && <DashboardTab/>}
-        {activeTab==="sec-totals"  && (isAdmin||isSecretary) && <SecTotalsTab/>}
-        {activeTab==="sec-report"  && (isAdmin||isSecretary) && <SecReportTab/>}
-        {activeTab==="breakdown"   && (isAdmin||isSecretary) && <BreakdownTab/>}
-        {activeTab==="history"     && (isAdmin||isSecretary) && <HistoryTab/>}
-        {activeTab==="members"     && isAdmin      && <MembersTab/>}
-        {activeTab==="users"       && isAdmin      && <UsersTab/>}
-        {activeTab==="qrcodes"     && isAdmin      && <QRCodesTab/>}
-        {activeTab==="charts"      && <ChartsTab/>}
 
         {/* QR individual member modal */}
         {modal?.type==="qr"&&(

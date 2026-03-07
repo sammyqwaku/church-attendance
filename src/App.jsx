@@ -704,7 +704,37 @@ export default function App(){
     deleteData("church_currentUser");
   }, []);
 
-  // ── NOTE: Seed data removed — all data comes from Firebase ─────
+  // ── SEED SAMPLE HISTORICAL DATA (for demo charts) ─────────────
+  useEffect(()=>{
+    const hasData=Object.keys(attendance).length>0;
+    if(hasData) return; // don't overwrite real data
+    const today=new Date();
+    const sampleAtt={};
+    const sampleRpts={};
+    const rates=[0.75,0.82,0.68,0.90,0.72,0.85,0.78,0.88];
+    for(let i=7;i>=0;i--){
+      const d=new Date(today);
+      d.setDate(d.getDate()-(i*7)); // weekly
+      const dateStr=d.toISOString().split("T")[0];
+      const rate=rates[7-i];
+      // mark random members present based on rate
+      const shuffled=[...initMembers()].sort(()=>Math.random()-0.5);
+      const presentCount=Math.round(shuffled.length*rate);
+      shuffled.slice(0,presentCount).forEach(m=>{ sampleAtt[dateStr+"|"+m.id]=true; });
+      sampleRpts[dateStr]={
+        offertory:(Math.round((180+Math.random()*120)*100)/100).toFixed(2),
+        tithe:(Math.round((50+Math.random()*80)*100)/100).toFixed(2),
+        visitors:String(Math.floor(Math.random()*5)),
+        soulsWon:String(Math.floor(Math.random()*3)),
+        holySpirit:String(Math.floor(Math.random()*2)),
+        bibleStudy:String(Math.floor(6+Math.random()*6)),
+        activities:["Sunday Service","Midweek Service","Prayer Meeting","Youth Service"][i%4],
+        notes:"",
+      };
+    }
+    setAttendance(sampleAtt);
+    setDailyReports(sampleRpts);
+  },[]);
 
 
 
@@ -805,10 +835,10 @@ export default function App(){
   // ── TABS config ───────────────────────────────────────────────
   // ── TABS config ───────────────────────────────────────────────
   const tabs=isAdmin
-    ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-totals",label:"📋 Secretary"},{id:"sec-report",label:"📝 Rpt"},{id:"breakdown",label:"🔢 Breakdown"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
+    ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-totals",label:"📋 Secretary"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
     :isSecretary
-    ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"breakdown",label:"🔢 Breakdown"},{id:"history",label:"🗂 History"}]
-    :[{id:"attendance",label:"✅ Mark"},{id:"dashboard",label:"📊 Stats"},{id:"charts",label:"📈 Trends"}];
+    :[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"history",label:"🗂 History"}]
+    :[{id:"attendance",label:"✅ Mark"},{id:"members",label:"👥 Members"},{id:"charts",label:"📈 Trends"}];
 
   // ════════════════ ATTENDANCE TAB (leader only) ════════════════
   const AttendanceTab=()=>{
@@ -1082,82 +1112,25 @@ export default function App(){
               value={rpt.notes} onChange={e=>saveReport(selectedDate,"notes",e.target.value)} style={{resize:"vertical"}}/>
           </div>
         </div>
-        {/* ── BREAKDOWN SECTION ── */}
-        <p className="section-label">🔢 Attendance Breakdown</p>
+        {/* ─── BREAKDOWN (merged into Daily Rpt) ─── */}
+        <p className="section-label" style={{marginTop:6}}>🔢 Attendance Breakdown — By Category</p>
         <div className="demo-grid">
           {CATEGORIES.map(cat=>{
             const cm=members.filter(m=>m.category===cat);
-            const present=cm.filter(m=>isPresent(selectedDate,m.id)).length;
-            const pct=cm.length?Math.round(present/cm.length*100):0;
+            const pres=cm.filter(m=>isPresent(selectedDate,m.id)).length;
+            const pct=cm.length?Math.round(pres/cm.length*100):0;
             if(cm.length===0)return null;
             return(
               <div className="demo-box" key={cat}>
                 <div className="demo-label">{CAT_ICONS[cat]} {cat}</div>
-                <div className="demo-val">{present}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{cm.length}</span></div>
+                <div className="demo-val">{pres}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{cm.length}</span></div>
                 <div style={{margin:"4px 0 2px"}} className="progress-bar"><div className="progress-fill" style={{width:pct+"%"}}/></div>
-                <div className="demo-sub">{cm.length-present} absent · {pct}%</div>
+                <div className="demo-sub">{cm.length-pres} absent · {pct}%</div>
               </div>
             );
           })}
         </div>
-        <p className="section-label">By Group</p>
-        {groups.map(g=>{
-          const st=getGroupStats(g.id,selectedDate);
-          const gm=members.filter(m=>m.groupId===g.id);
-          return(
-            <div className="card" key={g.id} style={{padding:"12px 14px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                <div style={{width:9,height:9,borderRadius:"50%",background:g.color,flexShrink:0}}/>
-                <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1,fontSize:"0.9rem"}}>{g.name}</span>
-                <span style={{fontWeight:700,fontSize:"0.8rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
-                <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
-              </div>
-              <div className="progress-bar" style={{marginBottom:6}}><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
-              {st.present>0&&<div style={{fontSize:"0.68rem",color:"var(--green)",marginBottom:2}}>✓ Present: {gm.filter(m=>isPresent(selectedDate,m.id)).map(m=>m.name.split(" ").slice(-1)[0]).join(", ")}</div>}
-              {st.absent>0&&<div style={{fontSize:"0.68rem",color:"var(--red)"}}>✗ Absent: {gm.filter(m=>!isPresent(selectedDate,m.id)).map(m=>m.name.split(" ").slice(-1)[0]).join(", ")}</div>}
-            </div>
-          );
-        })}
-
-        <div style={{margin:"0 12px",display:"flex",gap:8}}>
-          <button className="btn btn-teal" style={{flex:1}} onClick={()=>showAlert("Daily report saved! ✓")}>💾 Save</button>
-          <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / PDF</button>
-        </div>
-      </div>
-    );
-  };
-
-  // ════════════════ BREAKDOWN ═══════════════════════════════════
-  const BreakdownTab=()=>{
-    const catStats=getCategoryStats(selectedDate);
-    const total=getTotalStats(selectedDate);
-    return(
-      <div className="scroll-area">
-        <DatePicker value={selectedDate} onChange={setSelectedDate}/>
-        <div className="summary-banner">
-          <h3>Attendance Breakdown — {formatDate(selectedDate)}</h3>
-          <div className="summary-grid">
-            {[{l:"Enrolled",v:total.total},{l:"Present",v:total.present},{l:"Rate",v:total.pct+"%"}].map(s=>(
-              <div className="summary-cell" key={s.l}><div className="summary-num">{s.v}</div><div className="summary-lbl">{s.l}</div></div>
-            ))}
-          </div>
-        </div>
-        <p className="section-label">By Member Category</p>
-        <div className="demo-grid">
-          {CATEGORIES.map(cat=>{
-            const s=catStats[cat];
-            const pct=s.total?Math.round(s.present/s.total*100):0;
-            return(
-              <div className="demo-box" key={cat}>
-                <div className="demo-label">{CAT_ICONS[cat]} {cat}</div>
-                <div className="demo-val">{s.present}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{s.total}</span></div>
-                <div style={{margin:"4px 0 2px"}} className="progress-bar"><div className="progress-fill" style={{width:pct+"%"}}/></div>
-                <div className="demo-sub">{s.total-s.present} absent · {pct}%</div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="section-label">By Group (with Category Detail)</p>
+        <p className="section-label">By Group (Present / Absent)</p>
         {groups.map(g=>{
           const st=getGroupStats(g.id,selectedDate);
           const gm=members.filter(m=>m.groupId===g.id);
@@ -1187,6 +1160,11 @@ export default function App(){
             </div>
           );
         })}
+
+        <div style={{margin:"8px 12px",display:"flex",gap:8}}>
+          <button className="btn btn-teal" style={{flex:1}} onClick={()=>showAlert("Daily report saved! ✓")}>💾 Save</button>
+          <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / PDF</button>
+        </div>
       </div>
     );
   };
@@ -1239,23 +1217,35 @@ export default function App(){
     );
   };
 
-  // ════════════════ MEMBERS (admin) ════════════════════════════
-  const MembersTab=()=>{
+  // ════════════════ MEMBERS (admin full-edit; leader view-only) ══════════
+  const MembersTab=({leaderMode=false})=>{
     const [search,setSearch]=useState("");
     const [fg,setFg]=useState("all");
     const [fc,setFc]=useState("all");
-    const [addName,setAddName]=useState("");
-    const [addGid,setAddGid]=useState(groups[0]?.id||"");
-    const [addCat,setAddCat]=useState("Male");
-    const [addGroupName,setAddGroupName]=useState("");
     const [addMode,setAddMode]=useState(null);
+    const [viewM,setViewM]=useState(null);
+    const [editM,setEditM]=useState(null);
+    const [aName,setAName]=useState("");
+    const [aGid,setAGid]=useState(groups[0]?.id||"");
+    const [aCat,setACat]=useState("Male");
+    const [aGender,setAGender]=useState("Male");
+    const [aPhone,setAPhone]=useState("");
+    const [aRes,setARes]=useState("");
+    const [aOcc,setAOcc]=useState("");
+    const [addGroupName,setAddGroupName]=useState("");
 
-    const filtered=members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase())&&(fg==="all"||m.groupId===fg)&&(fc==="all"||m.category===fc));
+    const baseMembers=leaderMode?members.filter(m=>m.groupId===myGroup?.id):members;
+    const filtered=baseMembers.filter(m=>
+      m.name.toLowerCase().includes(search.toLowerCase())&&
+      (fg==="all"||m.groupId===fg)&&
+      (fc==="all"||m.category===fc)
+    );
 
     const saveMember=()=>{
-      if(!addName.trim())return;
-      setMembers(p=>[...p,{id:"m"+Date.now(),name:addName.trim(),groupId:addGid,category:addCat}]);
-      showAlert(`${addName} added!`);setAddName("");setAddMode(null);
+      if(!aName.trim()){showAlert("Full name required","error");return;}
+      setMembers(p=>[...p,{id:"m"+Date.now(),name:aName.trim(),groupId:aGid,category:aCat,gender:aGender,phone:aPhone.trim(),residence:aRes.trim(),occupation:aOcc.trim()}]);
+      showAlert(`${aName} added!`);
+      setAName("");setAPhone("");setARes("");setAOcc("");setAddMode(null);
     };
     const saveGroup=()=>{
       if(!addGroupName.trim())return;
@@ -1263,36 +1253,118 @@ export default function App(){
       setGroups(p=>[...p,{id:"g"+Date.now(),name:addGroupName.trim(),color}]);
       showAlert(`Group "${addGroupName}" created!`);setAddGroupName("");setAddMode(null);
     };
+    const saveEdit=()=>{
+      setMembers(p=>p.map(m=>m.id===editM.id?{...editM}:m));
+      showAlert("Member updated!");setEditM(null);
+    };
     const deleteMember=id=>{setMembers(p=>p.filter(m=>m.id!==id));showAlert("Member removed","info");};
 
     return(
       <div className="scroll-area">
+
+        {/* ── Profile view modal ── */}
+        {viewM&&(()=>{
+          const grp=groups.find(g=>g.id===viewM.groupId);
+          const fields=[
+            {icon:"👤",label:"Full Name",val:viewM.name},
+            {icon:"👥",label:"Group",val:grp?.name},
+            {icon:"🏷️",label:"Category",val:`${CAT_ICONS[viewM.category]||""} ${viewM.category||""}`},
+            {icon:"⚧",label:"Gender",val:viewM.gender},
+            {icon:"📞",label:"Telephone",val:viewM.phone},
+            {icon:"📍",label:"Residence",val:viewM.residence},
+            {icon:"💼",label:"Occupation",val:viewM.occupation},
+          ].filter(f=>f.val&&String(f.val).trim());
+          return(
+            <div className="modal-overlay" onClick={()=>setViewM(null)}>
+              <div className="modal" onClick={e=>e.stopPropagation()}>
+                <div className="modal-title">👤 Member Profile <span style={{cursor:"pointer"}} onClick={()=>setViewM(null)}>✕</span></div>
+                <div style={{textAlign:"center",margin:"4px 0 16px"}}>
+                  <div style={{width:62,height:62,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.4rem",margin:"0 auto 10px"}}>{initials(viewM.name)}</div>
+                  <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.05rem",fontWeight:700,color:"var(--navy)"}}>{viewM.name}</div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {fields.map(f=>(
+                    <div key={f.label} style={{display:"flex",alignItems:"center",gap:10,background:"var(--cream)",borderRadius:8,padding:"8px 12px"}}>
+                      <span style={{fontSize:"1rem",width:22,textAlign:"center",flexShrink:0}}>{f.icon}</span>
+                      <div>
+                        <div style={{fontSize:"0.6rem",color:"var(--muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>{f.label}</div>
+                        <div style={{fontSize:"0.88rem",fontWeight:600,color:"var(--navy)"}}>{f.val}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {!leaderMode&&<button className="btn btn-navy btn-full" style={{marginTop:14}} onClick={()=>{setEditM({...viewM});setViewM(null);}}>✏️ Edit Details</button>}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Edit modal ── */}
+        {editM&&(
+          <div className="modal-overlay" onClick={()=>setEditM(null)}>
+            <div className="modal" onClick={e=>e.stopPropagation()}>
+              <div className="modal-title">✏️ Edit Member <span style={{cursor:"pointer"}} onClick={()=>setEditM(null)}>✕</span></div>
+              <input className="input" placeholder="Full Name *" value={editM.name} onChange={e=>setEditM(p=>({...p,name:e.target.value}))}/>
+              <select className="select" value={editM.groupId||""} onChange={e=>setEditM(p=>({...p,groupId:e.target.value}))}>
+                {groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <select className="select" value={editM.category||"Male"} onChange={e=>setEditM(p=>({...p,category:e.target.value}))}>
+                {CATEGORIES.map(cat=><option key={cat} value={cat}>{CAT_ICONS[cat]} {cat}</option>)}
+              </select>
+              <select className="select" value={editM.gender||"Male"} onChange={e=>setEditM(p=>({...p,gender:e.target.value}))}>
+                <option value="Male">Male</option><option value="Female">Female</option>
+              </select>
+              <input className="input" placeholder="📞 Telephone" value={editM.phone||""} onChange={e=>setEditM(p=>({...p,phone:e.target.value}))}/>
+              <input className="input" placeholder="📍 Residence" value={editM.residence||""} onChange={e=>setEditM(p=>({...p,residence:e.target.value}))}/>
+              <input className="input" placeholder="💼 Occupation" value={editM.occupation||""} onChange={e=>setEditM(p=>({...p,occupation:e.target.value}))}/>
+              <div style={{display:"flex",gap:8,marginTop:4}}>
+                <button className="btn btn-outline" style={{flex:1}} onClick={()=>setEditM(null)}>Cancel</button>
+                <button className="btn btn-primary" style={{flex:1}} onClick={saveEdit}>Save</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Search & filters ── */}
         <div style={{margin:"10px 12px 0",display:"flex",gap:7}}>
-          <input className="input" placeholder="🔍 Search..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:2,marginBottom:0}}/>
-          <select className="select" value={fg} onChange={e=>setFg(e.target.value)} style={{flex:1,marginBottom:0}}>
-            <option value="all">All Groups</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
+          <input className="input" placeholder="🔍 Search members..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:2,marginBottom:0}}/>
+          {!leaderMode&&(
+            <select className="select" value={fg} onChange={e=>setFg(e.target.value)} style={{flex:1,marginBottom:0}}>
+              <option value="all">All Groups</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          )}
         </div>
         <div style={{margin:"6px 12px 0"}}>
           <select className="select" value={fc} onChange={e=>setFc(e.target.value)} style={{marginBottom:0}}>
-            <option value="all">All Categories</option>{CATEGORIES.map(c=><option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}
+            <option value="all">All Categories</option>{CATEGORIES.map(cat=><option key={cat} value={cat}>{CAT_ICONS[cat]} {cat}</option>)}
           </select>
         </div>
-        <div style={{margin:"8px 12px",display:"flex",gap:7}}>
-          <button className="btn btn-primary btn-sm" onClick={()=>setAddMode(addMode==="member"?null:"member")}>+ Member</button>
-          <button className="btn btn-navy btn-sm" onClick={()=>setAddMode(addMode==="group"?null:"group")}>+ Group</button>
-        </div>
 
-        {addMode==="member"&&(
+        {/* ── Admin-only buttons ── */}
+        {!leaderMode&&(
+          <div style={{margin:"8px 12px",display:"flex",gap:7}}>
+            <button className="btn btn-primary btn-sm" onClick={()=>setAddMode(addMode==="member"?null:"member")}>+ Member</button>
+            <button className="btn btn-navy btn-sm" onClick={()=>setAddMode(addMode==="group"?null:"group")}>+ Group</button>
+          </div>
+        )}
+
+        {/* ── Add member form ── */}
+        {!leaderMode&&addMode==="member"&&(
           <div className="card" style={{background:"#FEF9EF",border:"1.5px solid var(--gold)"}}>
             <div className="card-title">➕ Add New Member</div>
-            <input className="input" placeholder="Full Name" value={addName} onChange={e=>setAddName(e.target.value)}/>
-            <select className="select" value={addGid} onChange={e=>setAddGid(e.target.value)}>
+            <input className="input" placeholder="Full Name *" value={aName} onChange={e=>setAName(e.target.value)}/>
+            <select className="select" value={aGid} onChange={e=>setAGid(e.target.value)}>
               {groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
-            <select className="select" value={addCat} onChange={e=>setAddCat(e.target.value)}>
-              {CATEGORIES.map(c=><option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}
+            <select className="select" value={aCat} onChange={e=>setACat(e.target.value)}>
+              {CATEGORIES.map(cat=><option key={cat} value={cat}>{CAT_ICONS[cat]} {cat}</option>)}
             </select>
+            <select className="select" value={aGender} onChange={e=>setAGender(e.target.value)}>
+              <option value="Male">Male</option><option value="Female">Female</option>
+            </select>
+            <input className="input" placeholder="📞 Telephone" value={aPhone} onChange={e=>setAPhone(e.target.value)}/>
+            <input className="input" placeholder="📍 Residence" value={aRes} onChange={e=>setARes(e.target.value)}/>
+            <input className="input" placeholder="💼 Occupation" value={aOcc} onChange={e=>setAOcc(e.target.value)}/>
             <div style={{display:"flex",gap:8}}>
               <button className="btn btn-primary" style={{flex:1}} onClick={saveMember}>Add Member</button>
               <button className="btn btn-outline" style={{flex:1}} onClick={()=>setAddMode(null)}>Cancel</button>
@@ -1300,7 +1372,8 @@ export default function App(){
           </div>
         )}
 
-        {addMode==="group"&&(
+        {/* ── Add group form ── */}
+        {!leaderMode&&addMode==="group"&&(
           <div className="card" style={{background:"#F0F4FF",border:"1.5px solid var(--navy)"}}>
             <div className="card-title">➕ Add New Group</div>
             <input className="input" placeholder="Group Name (e.g. Bereans)" value={addGroupName} onChange={e=>setAddGroupName(e.target.value)}/>
@@ -1311,23 +1384,39 @@ export default function App(){
           </div>
         )}
 
+        {/* ── Member list ── */}
         <div className="card">
-          <div style={{fontSize:"0.72rem",color:"var(--muted)",marginBottom:8}}>{filtered.length} member{filtered.length!==1?"s":""} shown</div>
+          <div style={{fontSize:"0.72rem",color:"var(--muted)",marginBottom:8}}>
+            {filtered.length} member{filtered.length!==1?"s":""} shown{leaderMode?` · ${myGroup?.name}`:""}
+          </div>
           {filtered.length===0&&<div style={{textAlign:"center",color:"var(--muted)",padding:16,fontSize:"0.82rem"}}>No members found</div>}
           {filtered.map(m=>{
             const grp=groups.find(g=>g.id===m.groupId);
             return(
-              <div className="member-row" key={m.id}>
+              <div className="member-row" key={m.id} style={{cursor:"pointer"}} onClick={()=>setViewM(m)}>
                 <div className="avatar" style={{background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`}}>{initials(m.name)}</div>
-                <div className="member-info">
+                <div className="member-info" style={{flex:1}}>
                   <div className="member-name">{m.name}</div>
-                  <div style={{display:"flex",gap:4,marginTop:2}}>
-                    <span className="badge badge-blue" style={{fontSize:"0.6rem"}}>{grp?.name}</span>
+                  <div style={{display:"flex",gap:4,marginTop:2,flexWrap:"wrap"}}>
+                    {!leaderMode&&<span className="badge badge-blue" style={{fontSize:"0.6rem"}}>{grp?.name}</span>}
                     <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                    {m.gender&&<span className="badge badge-teal" style={{fontSize:"0.6rem"}}>{m.gender}</span>}
                   </div>
+                  {(m.phone||m.residence||m.occupation)&&(
+                    <div style={{marginTop:3,fontSize:"0.62rem",color:"var(--muted)",display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {m.phone&&<span>📞 {m.phone}</span>}
+                      {m.residence&&<span>📍 {m.residence}</span>}
+                      {m.occupation&&<span>💼 {m.occupation}</span>}
+                    </div>
+                  )}
                 </div>
-                <button className="btn btn-outline btn-sm" style={{marginRight:4}} onClick={()=>setModal({type:"qr",member:m})}>QR</button>
-                <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteMember(m.id)}>✕</button>
+                {!leaderMode&&(
+                  <div style={{display:"flex",gap:4,flexShrink:0}} onClick={e=>e.stopPropagation()}>
+                    <button className="btn btn-outline btn-sm" onClick={()=>setModal({type:"qr",member:m})}>QR</button>
+                    <button className="btn btn-sm" style={{background:"#EEF2FF",color:"var(--navy)",border:"1px solid #C5CAE9"}} onClick={()=>setEditM({...m})}>✏️</button>
+                    <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteMember(m.id)}>✕</button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1722,16 +1811,16 @@ export default function App(){
   const navSections = isAdmin
     ? [
         { label: "Overview",   items: tabs.filter(t=>["dashboard","charts"].includes(t.id)) },
-        { label: "Secretary",  items: tabs.filter(t=>["sec-totals","sec-report","breakdown","history"].includes(t.id)) },
+        { label: "Secretary",  items: tabs.filter(t=>["sec-totals","sec-report","history"].includes(t.id)) },
         { label: "Admin",      items: tabs.filter(t=>["members","users","qrcodes"].includes(t.id)) },
       ]
     : isSecretary
     ? [
-        { label: "Reports",    items: tabs.filter(t=>["sec-totals","sec-report","breakdown","history"].includes(t.id)) },
+        { label: "Reports",    items: tabs.filter(t=>["sec-totals","sec-report","history"].includes(t.id)) },
         { label: "Trends",     items: tabs.filter(t=>["charts"].includes(t.id)) },
       ]
     : [
-        { label: "My Group",   items: tabs.filter(t=>["attendance","dashboard","charts"].includes(t.id)) },
+        { label: "My Group",   items: tabs.filter(t=>["attendance","members","charts"].includes(t.id)) },
       ];
 
   return(
@@ -1795,10 +1884,11 @@ export default function App(){
             {alert&&<div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
 
             {activeTab==="attendance"  && isLeader    && <AttendanceTab/>}
-            {activeTab==="dashboard"   && (isAdmin||isLeader) && <DashboardTab/>}
+            {activeTab==="dashboard"   && isAdmin && <DashboardTab/>}
+            {activeTab==="members"     && isLeader      && <MembersTab leaderMode={true}/>}
             {activeTab==="sec-totals"  && (isAdmin||isSecretary) && <SecTotalsTab/>}
             {activeTab==="sec-report"  && (isAdmin||isSecretary) && <SecReportTab/>}
-            {activeTab==="breakdown"   && (isAdmin||isSecretary) && <BreakdownTab/>}
+
             {activeTab==="history"     && (isAdmin||isSecretary) && <HistoryTab/>}
             {activeTab==="members"     && isAdmin      && <MembersTab/>}
             {activeTab==="users"       && isAdmin      && <UsersTab/>}

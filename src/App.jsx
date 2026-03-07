@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { saveData, loadData, listenData, deleteData } from "./firebase";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
@@ -682,6 +682,92 @@ function PrintableReport({date, groups, members, attendance, report, onClose}){
   );
 }
 
+// ─── IMAGE COMPRESSION HELPER ────────────────────────────────
+// Resizes member photos to 160×160px before saving to Firebase
+// Keeps file size small (~15-25KB) so Firestore stays fast
+function compressImage(file, maxSize=160, quality=0.75){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error("File read failed"));
+    reader.onload=e=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error("Image load failed"));
+      img.onload=()=>{
+        const canvas=document.createElement("canvas");
+        let w=img.width, h=img.height;
+        if(w>h){ if(w>maxSize){h=Math.round(h*maxSize/w);w=maxSize;} }
+        else    { if(h>maxSize){w=Math.round(w*maxSize/h);h=maxSize;} }
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext("2d");
+        ctx.drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL("image/jpeg",quality));
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─── MEMBER AVATAR component (photo or initials fallback) ────
+function MemberAvatar({member, group, size=36, fontSize="0.75rem"}){
+  if(member?.photo){
+    return(
+      <div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",flexShrink:0,
+        border:`2px solid ${group?.color||"#888"}`,boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}>
+        <img src={member.photo} alt={member.name}
+          style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+      </div>
+    );
+  }
+  return(
+    <div style={{width:size,height:size,borderRadius:"50%",flexShrink:0,
+      background:`linear-gradient(135deg,${group?.color||"#888"},var(--navy))`,
+      display:"flex",alignItems:"center",justifyContent:"center",
+      color:"white",fontWeight:700,fontSize}}>
+      {initials(member?.name||"?")}
+    </div>
+  );
+}
+
+// ─── ERROR BOUNDARY — prevents white screen on crashes ──────────
+class ErrorBoundary extends React.Component {
+  constructor(props){
+    super(props);
+    this.state={hasError:false,error:null};
+  }
+  static getDerivedStateFromError(error){
+    return{hasError:true,error};
+  }
+  componentDidCatch(error,info){
+    console.error("App error:",error,info);
+  }
+  render(){
+    if(this.state.hasError){
+      return(
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",
+          background:"linear-gradient(135deg,#1A2744,#243260)",padding:24,fontFamily:"Lato,sans-serif"}}>
+          <div style={{background:"white",borderRadius:16,padding:"32px 24px",maxWidth:360,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+            <div style={{fontSize:"3rem",marginBottom:12}}>⚠️</div>
+            <h2 style={{fontFamily:"Playfair Display,serif",color:"#1A2744",marginBottom:8}}>Something went wrong</h2>
+            <p style={{fontSize:"0.82rem",color:"#7A7A7A",marginBottom:20,lineHeight:1.6}}>
+              The app encountered an unexpected error. Your data is safe in Firebase. Please refresh the page to continue.
+            </p>
+            <div style={{background:"#F8F9FA",borderRadius:8,padding:"8px 12px",marginBottom:20,fontSize:"0.7rem",color:"#888",textAlign:"left",wordBreak:"break-word"}}>
+              {String(this.state.error?.message||"Unknown error")}
+            </div>
+            <button onClick={()=>window.location.reload()}
+              style={{background:"#1A2744",color:"white",border:"none",borderRadius:10,padding:"12px 24px",
+                fontSize:"0.88rem",fontWeight:700,cursor:"pointer",width:"100%"}}>
+              🔄 Reload App
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── BREAKDOWN GROUP CARD (standalone — used by SecReportForm) ───
 function BdGroup({g,st,gm,presentList,absentList,cig}){
   const [open,setOpen]=useState(false);
@@ -728,7 +814,7 @@ function BdGroup({g,st,gm,presentList,absentList,cig}){
               ?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>🎉 No absences!</div>
               :absentList.map(m=>(
                 <div key={m.id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
-                  <div style={{width:28,height:28,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.65rem",flexShrink:0}}>{initials(m.name)}</div>
+                  <MemberAvatar member={m} group={{color:"#ccc"}} size={28} fontSize="0.65rem"/>
                   <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem",color:"var(--muted)"}}>{m.name}</div>{m.phone&&<div style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</div>}</div>
                   <span className="badge badge-red" style={{fontSize:"0.62rem"}}>✗</span>
                 </div>
@@ -895,12 +981,13 @@ function SecReportForm({date,rpt,groups,members,isPresent,getGroupStats,saveRepo
 // ═══════════════════════════════════════════════════════════════════
 export default function App(){
   // ── PERSISTENT STATE (survives page refresh via localStorage) ───
-  const [groups,       setGroups]       = useLocalStorage("church_groups",       initGroups);
-  const [members,      setMembers]      = useLocalStorage("church_members",      initMembers);
-  const [users,        setUsers]        = useLocalStorage("church_users",        initUsers);
+  const [groups,       setGroups,       grpLoaded]  = useLocalStorage("church_groups",       initGroups);
+  const [members,      setMembers,      memLoaded]  = useLocalStorage("church_members",      initMembers);
+  const [users,        setUsers,        usrLoaded]  = useLocalStorage("church_users",        initUsers);
   const [attendance,   setAttendance,   attLoaded]  = useLocalStorage("church_attendance",   {});
   const [dailyReports, setDailyReports, rptLoaded]  = useLocalStorage("church_dailyreports", {});
-  const [submittedAtt, setSubmittedAtt] = useLocalStorage("church_submittedAtt", {}); // {groupId_date: true}
+  const [submittedAtt, setSubmittedAtt, subLoaded]  = useLocalStorage("church_submittedAtt", {});
+  const appReady = grpLoaded && memLoaded && usrLoaded && attLoaded && rptLoaded && subLoaded; // {groupId_date: true}
 
   // ── SESSION STATE (per-device, survives refresh but not shared) ─
   const [currentUser, setCurrentUserState] = useState(() => {
@@ -926,6 +1013,8 @@ export default function App(){
   const [checkInGroup, setCheckInGroup] = useState(null);
   const [resetConfirm, setResetConfirm] = useState(0);   // 0=idle 1=first 2=final
   const [resetWord,    setResetWord]    = useState("");
+  const [loginAttempts,setLoginAttempts]= useState(0);   // failed attempt counter
+  const [lockUntil,    setLockUntil]    = useState(null);// timestamp when lock expires
 
   // ── CLEAN UP old Firebase currentUser doc (caused cross-device sign-out) ─
   useEffect(() => {
@@ -1007,7 +1096,15 @@ export default function App(){
   const showAlert=(msg,type="success")=>{setAlert({msg,type});setTimeout(()=>setAlert(null),3200);};
 
   // ── LOGIN ─────────────────────────────────────────────────────
+  const MAX_ATTEMPTS=5;
+  const LOCK_MINUTES=5;
   const handleLogin=async()=>{
+    // Check if currently locked out
+    if(lockUntil&&Date.now()<lockUntil){
+      const remaining=Math.ceil((lockUntil-Date.now())/60000);
+      setLoginError(`Too many failed attempts. Try again in ${remaining} minute${remaining>1?"s":""}.`);
+      return;
+    }
     const candidates=users.filter(u=>!loginRole||u.role===loginRole);
     let matched=null;
     for(const u of candidates){
@@ -1016,11 +1113,55 @@ export default function App(){
     }
     if(matched){
       setCurrentUser(matched);setLoginError("");setLoginPin("");
+      setLoginAttempts(0);setLockUntil(null);
       setActiveTab(matched.role==="admin"?"dashboard":matched.role==="secretary"?"sec-totals":"attendance");
+      // Audit log — record sign-in
+      try{
+        const log=JSON.parse(sessionStorage.getItem("church_auditlog")||"[]");
+        log.unshift({action:"LOGIN",user:matched.name,role:matched.role,time:new Date().toISOString()});
+        sessionStorage.setItem("church_auditlog",JSON.stringify(log.slice(0,50)));
+      }catch{}
     } else {
-      setLoginError("Incorrect PIN or role. Try again.");setLoginPin("");
+      const newAttempts=loginAttempts+1;
+      setLoginAttempts(newAttempts);
+      setLoginPin("");
+      if(newAttempts>=MAX_ATTEMPTS){
+        const until=Date.now()+(LOCK_MINUTES*60*1000);
+        setLockUntil(until);
+        setLoginError(`Too many failed attempts. Account locked for ${LOCK_MINUTES} minutes.`);
+        setLoginAttempts(0);
+      } else {
+        const left=MAX_ATTEMPTS-newAttempts;
+        setLoginError(`Incorrect PIN or role. ${left} attempt${left>1?"s":""} remaining.`);
+      }
     }
   };
+
+  // ── LOADING SCREEN ───────────────────────────────────────────
+  if(!appReady){
+    return(
+      <>
+        <style>{STYLE}</style>
+        <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 100%)"}}>
+          <div style={{textAlign:"center",padding:24}}>
+            <div style={{fontSize:"3.5rem",marginBottom:16,animation:"pulse 1.5s infinite"}}>⛪</div>
+            <h2 style={{color:"var(--gold-light)",fontFamily:"Playfair Display,serif",marginBottom:8}}>COP - Christ Temple Assembly</h2>
+            <p style={{color:"rgba(255,255,255,0.6)",fontSize:"0.85rem",marginBottom:24}}>Loading church data...</p>
+            <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+              {[0,1,2].map(i=>(
+                <div key={i} style={{width:10,height:10,borderRadius:"50%",background:"var(--gold)",
+                  animation:`bounce 1.2s ${i*0.2}s infinite`,opacity:0.8}}/>
+              ))}
+            </div>
+          </div>
+          <style>{`
+            @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-12px)}}
+            @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+          `}</style>
+        </div>
+      </>
+    );
+  }
 
   // ── QR CHECK-IN SIMULATION ────────────────────────────────────
   if(checkInGroup){
@@ -1060,8 +1201,17 @@ export default function App(){
               onKeyDown={e=>e.key==="Enter"&&handleLogin()}
               style={{fontSize:"1.2rem",letterSpacing:"8px",textAlign:"center"}}/>
             {loginError&&<div className="alert alert-error" style={{margin:"0 0 10px"}}>{loginError}</div>}
-            <button className="btn btn-navy btn-full" onClick={handleLogin}>Sign In →</button>
+            {!loginError&&loginAttempts>0&&<div style={{fontSize:"0.72rem",color:"var(--gold)",textAlign:"center",marginBottom:8}}>⚠️ {MAX_ATTEMPTS-loginAttempts} attempt{MAX_ATTEMPTS-loginAttempts!==1?"s":""} remaining before lockout</div>}
+            <button className="btn btn-navy btn-full" onClick={handleLogin}
+              disabled={!!(lockUntil&&Date.now()<lockUntil)}
+              style={{opacity:(lockUntil&&Date.now()<lockUntil)?0.5:1}}>
+              {(lockUntil&&Date.now()<lockUntil)?"🔒 Account Locked":"Sign In →"}
+            </button>
 
+            {/* Privacy Notice */}
+            <div style={{marginTop:16,padding:"10px 12px",background:"#F8F9FA",borderRadius:8,fontSize:"0.68rem",color:"#888",lineHeight:1.6,textAlign:"center"}}>
+              🔒 <strong>Privacy Notice:</strong> This app collects and stores church attendance and financial data solely for internal church management purposes. All data is stored securely on Google Firebase servers and is accessible only to authorised church staff. By signing in, you consent to this data usage. Data is not shared with third parties.
+            </div>
           </div>
         </div>
       </>
@@ -1631,6 +1781,20 @@ export default function App(){
     const [aRes,setARes]=useState("");
     const [aOcc,setAOcc]=useState("");
     const [addGroupName,setAddGroupName]=useState("");
+    const [aPhoto,setAPhoto]=useState(null);
+    const [photoLoading,setPhotoLoading]=useState(false);
+
+    const handlePhotoUpload=async(file,setFn)=>{
+      if(!file)return;
+      if(file.size>10*1024*1024){showAlert("Photo too large. Please choose a smaller image.","error");return;}
+      setPhotoLoading(true);
+      try{
+        const compressed=await compressImage(file);
+        setFn(compressed);
+      }catch(err){
+        showAlert("Could not process image. Try another photo.","error");
+      }finally{setPhotoLoading(false);}
+    };
 
     const base=groupFilter?members.filter(m=>m.groupId===groupFilter):members;
     const filtered=base.filter(m=>
@@ -1641,8 +1805,8 @@ export default function App(){
 
     const saveMember=()=>{
       if(!aName.trim()){showAlert("Full name required","error");return;}
-      setMembers(p=>[...p,{id:"m"+Date.now(),name:aName.trim(),groupId:aGid,category:aCat,gender:aGender,phone:aPhone.trim(),residence:aRes.trim(),occupation:aOcc.trim()}]);
-      showAlert(`${aName} added!`);setAName("");setAPhone("");setARes("");setAOcc("");setAddMode(null);
+      setMembers(p=>[...p,{id:"m"+Date.now(),name:aName.trim(),groupId:aGid,category:aCat,gender:aGender,phone:aPhone.trim(),residence:aRes.trim(),occupation:aOcc.trim(),photo:aPhoto||null}]);
+      showAlert(`${aName} added!`);setAName("");setAPhone("");setARes("");setAOcc("");setAPhoto(null);setAddMode(null);
     };
     const saveGroup=()=>{
       if(!addGroupName.trim())return;
@@ -1676,7 +1840,13 @@ export default function App(){
               <div className="modal" onClick={e=>e.stopPropagation()}>
                 <div className="modal-title">👤 Member Profile <span style={{cursor:"pointer"}} onClick={()=>setViewM(null)}>✕</span></div>
                 <div style={{textAlign:"center",margin:"4px 0 16px"}}>
-                  <div style={{width:62,height:62,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.4rem",margin:"0 auto 10px"}}>{initials(viewM.name)}</div>
+                  <div style={{position:"relative",display:"inline-block",marginBottom:10}}>
+                    {viewM.photo
+                      ?<img src={viewM.photo} alt={viewM.name} style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",border:`3px solid ${grp?.color||"var(--gold)"}`,boxShadow:"0 4px 16px rgba(0,0,0,0.15)"}}/>
+                      :<div style={{width:80,height:80,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.8rem"}}>{initials(viewM.name)}</div>
+                    }
+                    <div style={{position:"absolute",bottom:2,right:2,width:18,height:18,borderRadius:"50%",background:grp?.color||"var(--navy)",border:"2px solid white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.55rem"}}>✝</div>
+                  </div>
                   <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.05rem",fontWeight:700,color:"var(--navy)"}}>{viewM.name}</div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:7}}>
@@ -1714,9 +1884,27 @@ export default function App(){
               <input className="input" placeholder="📞 Telephone" value={editM.phone||""} onChange={e=>setEditM(p=>({...p,phone:e.target.value}))}/>
               <input className="input" placeholder="📍 Residence" value={editM.residence||""} onChange={e=>setEditM(p=>({...p,residence:e.target.value}))}/>
               <input className="input" placeholder="💼 Occupation" value={editM.occupation||""} onChange={e=>setEditM(p=>({...p,occupation:e.target.value}))}/>
+              {/* Photo upload in edit */}
+              <div style={{marginTop:4}}>
+                <div style={{fontSize:"0.72rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>📸 Member Photo</div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  {editM.photo
+                    ?<img src={editM.photo} alt="preview" style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:"2px solid var(--gold)"}}/>
+                    :<div style={{width:52,height:52,borderRadius:"50%",background:"var(--cream-dark)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.4rem"}}>👤</div>
+                  }
+                  <div style={{flex:1}}>
+                    <label style={{display:"block",padding:"8px 14px",background:"var(--navy)",color:"white",borderRadius:8,textAlign:"center",fontSize:"0.75rem",fontWeight:700,cursor:photoLoading?"not-allowed":"pointer"}}>
+                      {photoLoading?"⏳ Processing...":editM.photo?"🔄 Change Photo":"📷 Upload Photo"}
+                      <input type="file" accept="image/*" style={{display:"none"}}
+                        onChange={e=>handlePhotoUpload(e.target.files[0],photo=>setEditM(p=>({...p,photo})))} disabled={photoLoading}/>
+                    </label>
+                    {editM.photo&&<button style={{marginTop:4,width:"100%",padding:"4px",background:"transparent",border:"1px solid var(--red)",borderRadius:6,color:"var(--red)",fontSize:"0.68rem",cursor:"pointer"}} onClick={()=>setEditM(p=>({...p,photo:null}))}>✕ Remove photo</button>}
+                  </div>
+                </div>
+              </div>
               <div style={{display:"flex",gap:8,marginTop:4}}>
                 <button className="btn btn-outline" style={{flex:1}} onClick={()=>setEditM(null)}>Cancel</button>
-                <button className="btn btn-primary" style={{flex:1}} onClick={saveEdit}>Save</button>
+                <button className="btn btn-primary" style={{flex:1}} onClick={saveEdit} disabled={photoLoading}>Save</button>
               </div>
             </div>
           </div>
@@ -1762,9 +1950,27 @@ export default function App(){
             <input className="input" placeholder="📞 Telephone" value={aPhone} onChange={e=>setAPhone(e.target.value)}/>
             <input className="input" placeholder="📍 Residence" value={aRes} onChange={e=>setARes(e.target.value)}/>
             <input className="input" placeholder="💼 Occupation" value={aOcc} onChange={e=>setAOcc(e.target.value)}/>
-            <div style={{display:"flex",gap:8}}>
-              <button className="btn btn-primary" style={{flex:1}} onClick={saveMember}>Add Member</button>
-              <button className="btn btn-outline" style={{flex:1}} onClick={()=>setAddMode(null)}>Cancel</button>
+            {/* Photo upload */}
+            <div style={{marginTop:4}}>
+              <div style={{fontSize:"0.72rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>📸 Member Photo (optional)</div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                {aPhoto
+                  ?<img src={aPhoto} alt="preview" style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:"2px solid var(--gold)"}}/>
+                  :<div style={{width:52,height:52,borderRadius:"50%",background:"var(--cream-dark)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.4rem"}}>👤</div>
+                }
+                <div style={{flex:1}}>
+                  <label style={{display:"block",padding:"8px 14px",background:"var(--navy)",color:"white",borderRadius:8,textAlign:"center",fontSize:"0.75rem",fontWeight:700,cursor:"pointer"}}>
+                    {photoLoading?"⏳ Processing...":aPhoto?"🔄 Change Photo":"📷 Upload Photo"}
+                    <input type="file" accept="image/*" style={{display:"none"}}
+                      onChange={e=>handlePhotoUpload(e.target.files[0],setAPhoto)} disabled={photoLoading}/>
+                  </label>
+                  {aPhoto&&<button style={{marginTop:4,width:"100%",padding:"4px",background:"transparent",border:"1px solid var(--red)",borderRadius:6,color:"var(--red)",fontSize:"0.68rem",cursor:"pointer"}} onClick={()=>setAPhoto(null)}>✕ Remove photo</button>}
+                </div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:4}}>
+              <button className="btn btn-primary" style={{flex:1}} onClick={saveMember} disabled={photoLoading}>Add Member</button>
+              <button className="btn btn-outline" style={{flex:1}} onClick={()=>{setAddMode(null);setAPhoto(null);}}>Cancel</button>
             </div>
           </div>
         )}
@@ -1790,7 +1996,7 @@ export default function App(){
             const grp=groups.find(g=>g.id===m.groupId);
             return(
               <div className="member-row" key={m.id} style={{cursor:"pointer"}} onClick={()=>setViewM(m)}>
-                <div className="avatar" style={{background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`}}>{initials(m.name)}</div>
+                <MemberAvatar member={m} group={grp} size={38} fontSize="0.72rem"/>
                 <div className="member-info" style={{flex:1}}>
                   <div className="member-name">{m.name}</div>
                   <div style={{display:"flex",gap:4,marginTop:2,flexWrap:"wrap"}}>
@@ -1985,6 +2191,30 @@ export default function App(){
               badge={<span className="badge badge-purple" style={{fontSize:"0.6rem"}}>Secretary</span>}/>
           ))}
         </div>
+
+        {/* ── AUDIT LOG ── */}
+        {(()=>{
+          try{
+            const log=JSON.parse(sessionStorage.getItem("church_auditlog")||"[]");
+            if(log.length===0) return null;
+            return(
+              <>
+                <p className="section-label">📋 Recent Activity Log</p>
+                <div className="card" style={{padding:"10px 14px"}}>
+                  {log.slice(0,8).map((entry,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                      <span style={{fontSize:"0.9rem"}}>{entry.action==="LOGIN"?"🔑":"📝"}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:"0.78rem",fontWeight:700,color:"var(--navy)"}}>{entry.user} <span style={{color:"var(--muted)",fontWeight:400,textTransform:"capitalize"}}>({entry.role})</span></div>
+                        <div style={{fontSize:"0.65rem",color:"var(--muted)"}}>{entry.action} · {new Date(entry.time).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          }catch{return null;}
+        })()}
 
         {/* ── BACKUP ── */}
         <p className="section-label">💾 Data Backup</p>
@@ -2559,7 +2789,7 @@ export default function App(){
             <div className="card">
               {faithful.map(m=>{const grp=groups.find(g=>g.id===m.groupId);return(
                 <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
-                  <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.7rem",flexShrink:0}}>{initials(m.name)}</div>
+                  <MemberAvatar member={m} group={grp} size={30} fontSize="0.7rem"/>
                   <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem"}}>{m.name}</div><span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{grp?.name}</span></div>
                   <span style={{fontSize:"0.75rem",color:"var(--green)",fontWeight:700}}>✓ {totalSessions}/{totalSessions}</span>
                 </div>
@@ -2575,7 +2805,7 @@ export default function App(){
             <div className="card">
               {neverPresent.map(m=>{const grp=groups.find(g=>g.id===m.groupId);return(
                 <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
-                  <div style={{width:30,height:30,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.7rem",flexShrink:0}}>{initials(m.name)}</div>
+                  <MemberAvatar member={m} group={{color:"#ccc"}} size={30} fontSize="0.7rem"/>
                   <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem",color:"var(--muted)"}}>{m.name}</div>
                     <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:1}}><span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{grp?.name}</span>{m.phone&&<span style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</span>}</div>
                   </div>
@@ -2638,6 +2868,7 @@ export default function App(){
       ];
 
   return(
+    <ErrorBoundary>
     <>
       <style>{STYLE}</style>
       <div className="app">
@@ -2740,5 +2971,6 @@ export default function App(){
         )}
       </div>
     </>
+    </ErrorBoundary>
   );
 }

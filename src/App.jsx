@@ -837,7 +837,7 @@ export default function App(){
   const tabs=isAdmin
     ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-totals",label:"📋 Secretary"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
     :isSecretary
-    :[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"history",label:"🗂 History"}]
+    ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"history",label:"🗂 History"}]
     :[{id:"attendance",label:"✅ Mark"},{id:"members",label:"👥 Members"},{id:"charts",label:"📈 Trends"}];
 
   // ════════════════ ATTENDANCE TAB (leader only) ════════════════

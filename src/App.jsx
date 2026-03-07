@@ -363,6 +363,8 @@ const STYLE = `
 // ── Constants ─────────────────────────────────────────────────────
 const GROUP_COLORS=["#C9973A","#2980B9","#27AE60","#8E44AD","#E74C3C","#16A085","#D35400","#2C3E50","#C0392B","#1ABC9C"];
 const CATEGORIES=["Elder","Deacon","Deaconess","Male","Female","Children"];
+const SERVICE_TYPES=["Sunday Morning","Mid-Week","Friday Evening"];
+const SERVICE_ICONS={"Sunday Morning":"☀️","Mid-Week":"📖","Friday Evening":"🌙"};
 const CAT_ICONS={Elder:"👴",Deacon:"👨‍⚖️",Deaconess:"👩‍⚖️",Male:"👨",Female:"👩",Children:"🧒"};
 
 // ── Seed Data ─────────────────────────────────────────────────────
@@ -828,17 +830,16 @@ export default function App(){
   };
 
   // ── Report helpers ────────────────────────────────────────────
-  const emptyReport=()=>({offertory:"",tithe:"",visitors:"0",soulsWon:"0",holySpirit:"0",bibleStudy:"0",activities:"",notes:""});
+  const emptyReport=()=>({offertory:"",tithe:"",visitors:"0",soulsWon:"0",holySpirit:"0",bibleStudy:"0",activities:"",notes:"",serviceType:"Sunday Morning"});
   const getReport=date=>dailyReports[date]||emptyReport();
   const saveReport=(date,field,val)=>setDailyReports(p=>({...p,[date]:{...getReport(date),[field]:val}}));
 
   // ── TABS config ───────────────────────────────────────────────
-  // ── TABS config ───────────────────────────────────────────────
   const tabs=isAdmin
-    ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-totals",label:"📋 Secretary"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"breakdown",label:"🔢 Breakdown"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
+    ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
     :isSecretary
-    ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"breakdown",label:"🔢 Breakdown"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"}]
-    :[{id:"attendance",label:"✅ Mark"},{id:"grp-members",label:"👥 My Group"},{id:"grp-history",label:"🗂 History"}];
+    ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"}]
+    :[{id:"attendance",label:"✅ Mark"},{id:"grp-members",label:"👥 My Group"},{id:"month",label:"📅 Month"},{id:"grp-history",label:"🗂 History"}];
 
   // ════════════════ ATTENDANCE TAB (leader only) ════════════════
   const AttendanceTab=()=>{
@@ -866,6 +867,14 @@ export default function App(){
     return(
       <div className="scroll-area">
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+        <div style={{margin:"4px 12px 6px",display:"flex",gap:6,flexWrap:"wrap"}}>
+          {SERVICE_TYPES.map(svc=>{const rpt=getReport(selectedDate);const sel=(rpt.serviceType||"Sunday Morning")===svc;return(
+            <button key={svc} onClick={()=>saveReport(selectedDate,"serviceType",svc)}
+              style={{padding:"5px 12px",borderRadius:20,border:`1.5px solid ${sel?"var(--gold)":"var(--cream-dark)"}`,background:sel?"var(--gold)":"white",color:sel?"white":"var(--muted)",fontWeight:700,fontSize:"0.72rem",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+              {SERVICE_ICONS[svc]} {svc}
+            </button>
+          );})}
+        </div>
 
         {/* Confirm submit modal */}
         {confirmGroup&&(
@@ -1065,12 +1074,69 @@ export default function App(){
     );
   };
 
+  // ── Breakdown group card (collapsible) ──────────────────────
+  const BdGroup=({g,st,gm,presentList,absentList,cig})=>{
+    const [open,setOpen]=useState(false);
+    return(
+      <div className="card" style={{padding:0,overflow:"hidden",border:open?`2px solid ${g.color}`:undefined}}>
+        <div style={{padding:"11px 14px",cursor:"pointer",background:g.color+"14"}} onClick={()=>setOpen(o=>!o)}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+            <div style={{width:10,height:10,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+            <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1,fontSize:"0.92rem"}}>{g.name}</span>
+            <span style={{fontWeight:700,fontSize:"0.82rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
+            <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
+            <span style={{color:"var(--muted)",fontSize:"0.85rem",marginLeft:2}}>{open?"▲":"▼"}</span>
+          </div>
+          <div className="progress-bar"><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
+          {!open&&absentList.length>0&&<div style={{marginTop:5,fontSize:"0.7rem",color:"var(--red)"}}>⚠ Absent: {absentList.map(m=>m.name.split(" ")[0]).join(", ")}</div>}
+        </div>
+        {open&&(
+          <div style={{padding:"0 14px 12px",borderTop:`1px solid ${g.color}22`}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,margin:"10px 0 8px"}}>
+              {CATEGORIES.map(cat=>{const ci=cig[cat];if(!ci||ci.total===0)return null;return(
+                <div key={cat} style={{background:"var(--cream)",borderRadius:7,padding:"6px 5px",textAlign:"center"}}>
+                  <div style={{fontSize:"0.95rem"}}>{CAT_ICONS[cat]}</div>
+                  <div style={{fontSize:"0.72rem",fontWeight:700,color:"var(--navy)"}}>{ci.present}/{ci.total}</div>
+                  <div style={{fontSize:"0.58rem",color:"var(--muted)"}}>{cat}</div>
+                </div>
+              );})}
+            </div>
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--green)",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>✓ Present ({presentList.length})</div>
+              {presentList.length===0?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>None yet</div>
+                :presentList.map(m=>(
+                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                    <div style={{width:28,height:28,borderRadius:"50%",background:`linear-gradient(135deg,${g.color},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.65rem",flexShrink:0}}>{initials(m.name)}</div>
+                    <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem"}}>{m.name}</div><span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{CAT_ICONS[m.category]} {m.category}</span></div>
+                    <span className="badge badge-green" style={{fontSize:"0.62rem"}}>✓</span>
+                  </div>
+                ))
+              }
+            </div>
+            <div>
+              <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--red)",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>✗ Absent ({absentList.length})</div>
+              {absentList.length===0?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>🎉 No absences!</div>
+                :absentList.map(m=>(
+                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                    <div style={{width:28,height:28,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.65rem",flexShrink:0}}>{initials(m.name)}</div>
+                    <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem",color:"var(--muted)"}}>{m.name}</div>{m.phone&&<div style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</div>}</div>
+                    <span className="badge badge-red" style={{fontSize:"0.62rem"}}>✗</span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ════════════════ SEC DAILY REPORT ═══════════════════════════
   const SecReportTab=()=>{
     const rpt=getReport(selectedDate);
     const total=getTotalStats(selectedDate);
 
-    // ── PASTOR: read-only view ──────────────────────────────────
+    // ── PASTOR: read-only view with breakdown ───────────────────
     if(isAdmin){
       const hasData=rpt.offertory||rpt.tithe||rpt.visitors!=="0"||rpt.soulsWon!=="0"||rpt.holySpirit!=="0"||rpt.bibleStudy!=="0"||rpt.activities||rpt.notes;
       const Row=({icon,label,val})=>val&&val!=="0"?(
@@ -1085,6 +1151,10 @@ export default function App(){
           <div style={{margin:"6px 12px",background:"#EBF5FB",border:"1.5px solid #2980B9",borderRadius:8,padding:"8px 12px",fontSize:"0.75rem",color:"#1A5276",display:"flex",alignItems:"center",gap:6}}>
             👁️ <span>Read-only view. Only the Secretary can edit this report.</span>
           </div>
+          {rpt.serviceType&&<div style={{margin:"0 12px 4px",display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:"0.68rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px"}}>Service:</span>
+            <span style={{padding:"4px 12px",borderRadius:20,background:"var(--navy)",color:"white",fontWeight:700,fontSize:"0.75rem"}}>{SERVICE_ICONS[rpt.serviceType]} {rpt.serviceType}</span>
+          </div>}
           <div className="summary-banner">
             <h3>📊 {formatDate(selectedDate)}</h3>
             <div className="summary-grid">
@@ -1093,18 +1163,13 @@ export default function App(){
               ))}
             </div>
           </div>
-          {!hasData?(
-            <div className="card" style={{textAlign:"center",padding:"30px 16px"}}>
-              <div style={{fontSize:"2rem",marginBottom:8}}>📋</div>
-              <div style={{color:"var(--muted)",fontSize:"0.85rem"}}>No report submitted by Secretary for this date yet.</div>
-            </div>
-          ):(
+          {hasData&&(
             <>
               <div className="card">
                 <div className="card-title">💰 Financial Records</div>
                 <Row icon="🪙" label="Offertory (GHS)" val={rpt.offertory}/>
                 <Row icon="💵" label="Tithe (GHS)" val={rpt.tithe}/>
-                {!rpt.offertory&&!rpt.tithe&&<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>No financial data entered.</div>}
+                {!rpt.offertory&&!rpt.tithe&&<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>No financial data.</div>}
               </div>
               <div className="card">
                 <div className="card-title">🌱 Spiritual Records</div>
@@ -1122,6 +1187,33 @@ export default function App(){
               )}
             </>
           )}
+          {!hasData&&<div className="card" style={{textAlign:"center",padding:"24px 16px"}}><div style={{fontSize:"2rem",marginBottom:8}}>📋</div><div style={{color:"var(--muted)",fontSize:"0.85rem"}}>No report submitted yet for this date.</div></div>}
+          <p className="section-label">🔢 Attendance Breakdown</p>
+          <div className="demo-grid">
+            {CATEGORIES.map(cat=>{
+              const cm=members.filter(m=>m.category===cat);
+              const pres=cm.filter(m=>isPresent(selectedDate,m.id)).length;
+              const pct=cm.length?Math.round(pres/cm.length*100):0;
+              if(cm.length===0)return null;
+              return(
+                <div className="demo-box" key={cat}>
+                  <div className="demo-label">{CAT_ICONS[cat]} {cat}</div>
+                  <div className="demo-val">{pres}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{cm.length}</span></div>
+                  <div style={{margin:"4px 0 2px"}} className="progress-bar"><div className="progress-fill" style={{width:pct+"%"}}/></div>
+                  <div className="demo-sub">{cm.length-pres} absent · {pct}%</div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="section-label">By Group — <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,fontSize:"0.72rem"}}>tap to see present & absent</span></p>
+          {groups.map(g=>{
+            const st=getGroupStats(g.id,selectedDate);
+            const gm=members.filter(m=>m.groupId===g.id);
+            const presentList=gm.filter(m=>isPresent(selectedDate,m.id));
+            const absentList=gm.filter(m=>!isPresent(selectedDate,m.id));
+            const cig={};CATEGORIES.forEach(cat=>{const cm=gm.filter(m=>m.category===cat);cig[cat]={total:cm.length,present:cm.filter(m=>isPresent(selectedDate,m.id)).length};});
+            return(<BdGroup key={g.id} g={g} st={st} gm={gm} presentList={presentList} absentList={absentList} cig={cig}/>);
+          })}
           <div style={{margin:"8px 12px"}}>
             <button className="btn btn-primary btn-full" onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / Save as PDF</button>
           </div>
@@ -1129,7 +1221,7 @@ export default function App(){
       );
     }
 
-    // ── SECRETARY: editable view ────────────────────────────────
+    // ── SECRETARY: editable view + breakdown ────────────────────
     const Field=({label,icon,field,type="number",placeholder="0"})=>(
       <div className="report-field">
         <label>{icon} {label}</label>
@@ -1140,6 +1232,17 @@ export default function App(){
     return(
       <div className="scroll-area">
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+        <div style={{margin:"6px 12px"}}>
+          <div style={{fontSize:"0.68rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:5}}>⛪ Service Type</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {SERVICE_TYPES.map(st=>{const sel=(rpt.serviceType||"Sunday Morning")===st;return(
+              <button key={st} onClick={()=>saveReport(selectedDate,"serviceType",st)}
+                style={{padding:"6px 14px",borderRadius:20,border:`1.5px solid ${sel?"var(--navy)":"var(--cream-dark)"}`,background:sel?"var(--navy)":"white",color:sel?"white":"var(--muted)",fontWeight:700,fontSize:"0.75rem",cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+                {SERVICE_ICONS[st]} {st}
+              </button>
+            );})}
+          </div>
+        </div>
         <div className="summary-banner">
           <h3>📊 Attendance Summary</h3>
           <div className="summary-grid">
@@ -1173,7 +1276,33 @@ export default function App(){
               value={rpt.notes} onChange={e=>saveReport(selectedDate,"notes",e.target.value)} style={{resize:"vertical"}}/>
           </div>
         </div>
-        <div style={{margin:"0 12px",display:"flex",gap:8}}>
+        <p className="section-label">🔢 Attendance Breakdown</p>
+        <div className="demo-grid">
+          {CATEGORIES.map(cat=>{
+            const cm=members.filter(m=>m.category===cat);
+            const pres=cm.filter(m=>isPresent(selectedDate,m.id)).length;
+            const pct=cm.length?Math.round(pres/cm.length*100):0;
+            if(cm.length===0)return null;
+            return(
+              <div className="demo-box" key={cat}>
+                <div className="demo-label">{CAT_ICONS[cat]} {cat}</div>
+                <div className="demo-val">{pres}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{cm.length}</span></div>
+                <div style={{margin:"4px 0 2px"}} className="progress-bar"><div className="progress-fill" style={{width:pct+"%"}}/></div>
+                <div className="demo-sub">{cm.length-pres} absent · {pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="section-label">By Group — <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,fontSize:"0.72rem"}}>tap to see present & absent</span></p>
+        {groups.map(g=>{
+          const st=getGroupStats(g.id,selectedDate);
+          const gm=members.filter(m=>m.groupId===g.id);
+          const presentList=gm.filter(m=>isPresent(selectedDate,m.id));
+          const absentList=gm.filter(m=>!isPresent(selectedDate,m.id));
+          const cig={};CATEGORIES.forEach(cat=>{const cm=gm.filter(m=>m.category===cat);cig[cat]={total:cm.length,present:cm.filter(m=>isPresent(selectedDate,m.id)).length};});
+          return(<BdGroup key={g.id} g={g} st={st} gm={gm} presentList={presentList} absentList={absentList} cig={cig}/>);
+        })}
+        <div style={{margin:"8px 12px",display:"flex",gap:8}}>
           <button className="btn btn-teal" style={{flex:1}} onClick={()=>showAlert("Daily report saved! ✓")}>💾 Save</button>
           <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / PDF</button>
         </div>
@@ -1972,6 +2101,247 @@ export default function App(){
     );
   };
 
+  // ════════════════ MONTH TAB ══════════════════════════════════
+  // Pastor & Secretary: full report analysis per month
+  // Leader: attendance summary per month for their group
+  const MonthTab=()=>{
+    const now=new Date();
+    const [selYear,setSelYear]=useState(now.getFullYear());
+    const [selMonth,setSelMonth]=useState(now.getMonth());
+    const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+    // All attendance dates in selected month/year
+    const allDates=[...new Set(Object.keys(attendance).map(k=>k.split("|")[0]))]
+      .filter(d=>{const dt=new Date(d);return dt.getFullYear()===selYear&&dt.getMonth()===selMonth;})
+      .sort();
+
+    // Group dates by service type
+    const byService={};
+    SERVICE_TYPES.forEach(s=>{byService[s]=[];});
+    allDates.forEach(d=>{const rpt=getReport(d);const s=rpt.serviceType||"Sunday Morning";if(byService[s])byService[s].push(d);});
+
+    const monthStats=allDates.map(date=>{
+      const rpt=getReport(date);
+      return{date,
+        serviceType:rpt.serviceType||"Sunday Morning",
+        ...getTotalStats(date),
+        offertory:parseFloat(rpt.offertory)||0,
+        tithe:parseFloat(rpt.tithe)||0,
+        visitors:parseInt(rpt.visitors)||0,
+        soulsWon:parseInt(rpt.soulsWon)||0,
+        holySpirit:parseInt(rpt.holySpirit)||0,
+        activities:rpt.activities,notes:rpt.notes};
+    });
+
+    const totalSessions=monthStats.length;
+    const avgPct=totalSessions?Math.round(monthStats.reduce((s,d)=>s+d.pct,0)/totalSessions):0;
+    const avgPresent=totalSessions?Math.round(monthStats.reduce((s,d)=>s+d.present,0)/totalSessions):0;
+    const bestDay=monthStats.length?monthStats.reduce((a,b)=>a.pct>b.pct?a:b):null;
+    const worstDay=monthStats.length?monthStats.reduce((a,b)=>a.pct<b.pct?a:b):null;
+    const totalOffertory=monthStats.reduce((s,d)=>s+d.offertory,0);
+    const totalTithe=monthStats.reduce((s,d)=>s+d.tithe,0);
+    const totalVisitors=monthStats.reduce((s,d)=>s+d.visitors,0);
+    const totalSouls=monthStats.reduce((s,d)=>s+d.soulsWon,0);
+    const totalHS=monthStats.reduce((s,d)=>s+d.holySpirit,0);
+
+    // Member attendance counts
+    const baseMbrs=isLeader?members.filter(m=>m.groupId===myGroup?.id):members;
+    const memberCounts={};
+    baseMbrs.forEach(m=>{memberCounts[m.id]=allDates.filter(d=>isPresent(d,m.id)).length;});
+    const faithful=baseMbrs.filter(m=>totalSessions>0&&memberCounts[m.id]===totalSessions);
+    const neverPresent=baseMbrs.filter(m=>totalSessions>0&&memberCounts[m.id]===0);
+
+    // Group performance
+    const groupMonthStats=(isLeader?[myGroup].filter(Boolean):groups).map(g=>{
+      const gm=members.filter(m=>m.groupId===g.id);
+      const totalSlots=gm.length*totalSessions;
+      const totalPresent=allDates.reduce((s,d)=>s+gm.filter(m=>isPresent(d,m.id)).length,0);
+      const pct=totalSlots?Math.round(totalPresent/totalSlots*100):0;
+      return{...g,totalPresent,totalSlots,pct};
+    }).sort((a,b)=>b.pct-a.pct);
+
+    const MonthPicker=()=>(
+      <div style={{margin:"10px 12px 0",display:"flex",gap:8}}>
+        <select className="select" value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={{flex:2,marginBottom:0}}>
+          {MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}
+        </select>
+        <select className="select" value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={{flex:1,marginBottom:0}}>
+          {[now.getFullYear()-1,now.getFullYear(),now.getFullYear()+1].map(y=><option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+    );
+
+    if(totalSessions===0) return(
+      <div className="scroll-area">
+        <MonthPicker/>
+        <div className="card" style={{textAlign:"center",padding:"40px 20px",margin:"16px 12px"}}>
+          <div style={{fontSize:"2.5rem",marginBottom:10}}>📭</div>
+          <div style={{fontFamily:"Playfair Display,serif",fontSize:"1rem",color:"var(--navy)",marginBottom:6}}>No data for {MONTHS[selMonth]} {selYear}</div>
+          <div style={{fontSize:"0.8rem",color:"var(--muted)"}}>Record attendance for this month to see analysis here.</div>
+        </div>
+      </div>
+    );
+
+    return(
+      <div className="scroll-area">
+        <MonthPicker/>
+        {/* ── Summary Banner ── */}
+        <div className="summary-banner" style={{margin:"10px 12px 0"}}>
+          <h3>📅 {MONTHS[selMonth]} {selYear}{isLeader?` · ${myGroup?.name}`:""}</h3>
+          <div className="summary-grid">
+            {[{l:"Sessions",v:totalSessions},{l:"Avg Present",v:avgPresent},{l:"Avg Rate",v:avgPct+"%"}].map(s=>(
+              <div className="summary-cell" key={s.l}><div className="summary-num">{s.v}</div><div className="summary-lbl">{s.l}</div></div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Service type breakdown ── */}
+        <p className="section-label">⛪ By Service Type</p>
+        <div style={{margin:"0 12px",display:"flex",gap:8,flexWrap:"wrap"}}>
+          {SERVICE_TYPES.map(svc=>{const dates=byService[svc];if(dates.length===0)return null;
+            const avgP=Math.round(dates.reduce((s,d)=>s+getTotalStats(d).pct,0)/dates.length);
+            return(
+              <div key={svc} style={{flex:1,minWidth:90,background:"var(--cream)",borderRadius:10,padding:"10px",textAlign:"center"}}>
+                <div style={{fontSize:"1.3rem"}}>{SERVICE_ICONS[svc]}</div>
+                <div style={{fontWeight:700,fontSize:"0.9rem",color:"var(--navy)",marginTop:3}}>{dates.length} <span style={{fontSize:"0.65rem",fontWeight:400,color:"var(--muted)"}}>services</span></div>
+                <div style={{fontSize:"0.72rem",color:"var(--muted)"}}>{svc}</div>
+                <span className={`badge ${avgP>=70?"badge-green":avgP>=40?"badge-gold":"badge-red"}`} style={{marginTop:4,display:"inline-block"}}>{avgP}% avg</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Best / Worst ── */}
+        {bestDay&&worstDay&&(
+          <div style={{margin:"10px 12px 0",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:"#D5F5E3",borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:"0.62rem",color:"var(--green)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>🏆 Best Day</div>
+              <div style={{fontFamily:"Playfair Display,serif",fontSize:"0.85rem",fontWeight:700,color:"var(--navy)"}}>{formatDate(bestDay.date)}</div>
+              <div style={{fontSize:"0.72rem",color:"var(--green)",fontWeight:700,marginTop:2}}>{bestDay.pct}% · {bestDay.present} present</div>
+              <div style={{fontSize:"0.62rem",color:"var(--muted)",marginTop:1}}>{SERVICE_ICONS[bestDay.serviceType]} {bestDay.serviceType}</div>
+            </div>
+            <div style={{background:"#FFF5F5",borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:"0.62rem",color:"var(--red)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>📉 Lowest Day</div>
+              <div style={{fontFamily:"Playfair Display,serif",fontSize:"0.85rem",fontWeight:700,color:"var(--navy)"}}>{formatDate(worstDay.date)}</div>
+              <div style={{fontSize:"0.72rem",color:"var(--red)",fontWeight:700,marginTop:2}}>{worstDay.pct}% · {worstDay.present} present</div>
+              <div style={{fontSize:"0.62rem",color:"var(--muted)",marginTop:1}}>{SERVICE_ICONS[worstDay.serviceType]} {worstDay.serviceType}</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Financial (Pastor & Secretary only) ── */}
+        {!isLeader&&(totalOffertory>0||totalTithe>0)&&(
+          <>
+            <p className="section-label">💰 Financial Summary</p>
+            <div style={{margin:"0 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{background:"var(--cream)",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{fontSize:"0.62rem",color:"var(--muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>🪙 Total Offertory</div>
+                <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.05rem",fontWeight:700,color:"var(--green)",marginTop:4}}>GHS {totalOffertory.toFixed(2)}</div>
+              </div>
+              <div style={{background:"var(--cream)",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{fontSize:"0.62rem",color:"var(--muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>💵 Total Tithe</div>
+                <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.05rem",fontWeight:700,color:"var(--gold)",marginTop:4}}>GHS {totalTithe.toFixed(2)}</div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Spiritual Summary (Pastor & Secretary only) ── */}
+        {!isLeader&&(totalVisitors>0||totalSouls>0||totalHS>0)&&(
+          <>
+            <p className="section-label">🌱 Spiritual Summary</p>
+            <div style={{margin:"0 12px",display:"flex",gap:8,flexWrap:"wrap"}}>
+              {totalVisitors>0&&<div style={{flex:1,minWidth:80,background:"#EBF5FB",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:"1.4rem"}}>🙋</div><div style={{fontWeight:700,fontSize:"1rem",color:"var(--navy)"}}>{totalVisitors}</div><div style={{fontSize:"0.65rem",color:"var(--muted)"}}>Visitors</div></div>}
+              {totalSouls>0&&<div style={{flex:1,minWidth:80,background:"#F5EEF8",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:"1.4rem"}}>✨</div><div style={{fontWeight:700,fontSize:"1rem",color:"var(--navy)"}}>{totalSouls}</div><div style={{fontSize:"0.65rem",color:"var(--muted)"}}>Souls Won</div></div>}
+              {totalHS>0&&<div style={{flex:1,minWidth:80,background:"#E8F8F5",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:"1.4rem"}}>🕊️</div><div style={{fontWeight:700,fontSize:"1rem",color:"var(--navy)"}}>{totalHS}</div><div style={{fontSize:"0.65rem",color:"var(--muted)"}}>HS Baptism</div></div>}
+            </div>
+          </>
+        )}
+
+        {/* ── Group Performance ── */}
+        {!isLeader&&groupMonthStats.length>1&&(
+          <>
+            <p className="section-label">👥 Group Performance</p>
+            {groupMonthStats.map((g,i)=>(
+              <div className="card" key={g.id} style={{padding:"11px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <span style={{fontSize:"0.72rem",fontWeight:700,color:"var(--muted)",width:16}}>#{i+1}</span>
+                  <div style={{width:9,height:9,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+                  <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1}}>{g.name}</span>
+                  <span style={{fontSize:"0.78rem",fontWeight:700,color:"var(--navy)"}}>{g.totalPresent}/{g.totalSlots}</span>
+                  <span className={`badge ${g.pct>=70?"badge-green":g.pct>=40?"badge-gold":"badge-red"}`}>{g.pct}%</span>
+                </div>
+                <div className="progress-bar"><div className="progress-fill" style={{width:g.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* ── Perfect Attendance ── */}
+        {faithful.length>0&&(
+          <>
+            <p className="section-label">🌟 Perfect Attendance ({faithful.length})</p>
+            <div className="card">
+              {faithful.map(m=>{const grp=groups.find(g=>g.id===m.groupId);return(
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                  <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.7rem",flexShrink:0}}>{initials(m.name)}</div>
+                  <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem"}}>{m.name}</div><span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{grp?.name}</span></div>
+                  <span style={{fontSize:"0.75rem",color:"var(--green)",fontWeight:700}}>✓ {totalSessions}/{totalSessions}</span>
+                </div>
+              );})}
+            </div>
+          </>
+        )}
+
+        {/* ── Never Present ── */}
+        {neverPresent.length>0&&(
+          <>
+            <p className="section-label">⚠️ Never Attended ({neverPresent.length})</p>
+            <div className="card">
+              {neverPresent.map(m=>{const grp=groups.find(g=>g.id===m.groupId);return(
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                  <div style={{width:30,height:30,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.7rem",flexShrink:0}}>{initials(m.name)}</div>
+                  <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem",color:"var(--muted)"}}>{m.name}</div>
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:1}}><span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{grp?.name}</span>{m.phone&&<span style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</span>}</div>
+                  </div>
+                  <span style={{fontSize:"0.75rem",color:"var(--red)",fontWeight:700}}>✗ 0/{totalSessions}</span>
+                </div>
+              );})}
+            </div>
+          </>
+        )}
+
+        {/* ── Session Log ── */}
+        <p className="section-label">📋 Session Log</p>
+        {monthStats.map(d=>{
+          const rpt=getReport(d.date);
+          return(
+            <div className="card" key={d.date} style={{padding:"11px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <div>
+                  <div style={{fontFamily:"Playfair Display,serif",fontWeight:700,fontSize:"0.88rem"}}>{formatDate(d.date)}</div>
+                  <div style={{fontSize:"0.68rem",color:"var(--muted)",marginTop:1,display:"flex",gap:6,alignItems:"center"}}>
+                    <span>{SERVICE_ICONS[d.serviceType]} {d.serviceType}</span>
+                    <span>·</span><span>{d.present} present · {d.absent} absent</span>
+                  </div>
+                </div>
+                <span className={`badge ${d.pct>=70?"badge-green":d.pct>=40?"badge-gold":"badge-red"}`}>{d.pct}%</span>
+              </div>
+              <div className="progress-bar" style={{marginBottom:6}}><div className="progress-fill" style={{width:d.pct+"%"}}/></div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                {!isLeader&&rpt.offertory&&<span className="badge badge-green" style={{fontSize:"0.6rem"}}>🪙 GHS {rpt.offertory}</span>}
+                {!isLeader&&rpt.tithe&&<span className="badge badge-gold" style={{fontSize:"0.6rem"}}>💵 GHS {rpt.tithe}</span>}
+                {!isLeader&&rpt.visitors&&rpt.visitors!=="0"&&<span className="badge badge-blue" style={{fontSize:"0.6rem"}}>🙋 {rpt.visitors} visitors</span>}
+                {!isLeader&&rpt.soulsWon&&rpt.soulsWon!=="0"&&<span className="badge badge-purple" style={{fontSize:"0.6rem"}}>✨ {rpt.soulsWon} souls</span>}
+                {rpt.activities&&<span className="badge badge-gray" style={{fontSize:"0.6rem"}}>📌 {rpt.activities}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   // ════════════════ RENDER ══════════════════════════════════════
   const roleLabel=isAdmin?"Pastor / Admin":isSecretary?"Church Secretary":`Leader · ${myGroup?.name||""}`;
 
@@ -1979,17 +2349,17 @@ export default function App(){
   const navSections = isAdmin
     ? [
         { label: "Overview",   items: tabs.filter(t=>["dashboard","charts"].includes(t.id)) },
-        { label: "Secretary",  items: tabs.filter(t=>["sec-totals","sec-report","breakdown","history"].includes(t.id)) },
+        { label: "Reports",    items: tabs.filter(t=>["sec-report","month","history"].includes(t.id)) },
         { label: "Admin",      items: tabs.filter(t=>["members","users","qrcodes"].includes(t.id)) },
       ]
     : isSecretary
     ? [
-        { label: "Reports",    items: tabs.filter(t=>["sec-totals","sec-report","breakdown","history"].includes(t.id)) },
-        { label: "Members",    items: tabs.filter(t=>["members"].includes(t.id)) },
+        { label: "Reports",    items: tabs.filter(t=>["sec-totals","sec-report","month","history"].includes(t.id)) },
         { label: "Trends",     items: tabs.filter(t=>["charts"].includes(t.id)) },
+        { label: "Members",    items: tabs.filter(t=>["members"].includes(t.id)) },
       ]
     : [
-        { label: "My Group",   items: tabs.filter(t=>["attendance","grp-members","grp-history"].includes(t.id)) },
+        { label: "My Group",   items: tabs.filter(t=>["attendance","grp-members","month","grp-history"].includes(t.id)) },
       ];
 
   return(
@@ -2052,18 +2422,18 @@ export default function App(){
           <div className="main-content">
             {alert&&<div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
 
-            {activeTab==="attendance"  && isLeader    && <AttendanceTab/>}
-            {activeTab==="dashboard"   && isAdmin && <DashboardTab/>}
-            {activeTab==="sec-totals"  && (isAdmin||isSecretary) && <SecTotalsTab/>}
+            {activeTab==="attendance"  && isLeader      && <AttendanceTab/>}
+            {activeTab==="dashboard"   && isAdmin       && <DashboardTab/>}
+            {activeTab==="sec-totals"  && isSecretary   && <SecTotalsTab/>}
             {activeTab==="sec-report"  && (isAdmin||isSecretary) && <SecReportTab/>}
-            {activeTab==="breakdown"   && (isAdmin||isSecretary) && <BreakdownTab/>}
+            {activeTab==="month"       && <MonthTab/>}
             {activeTab==="history"     && (isAdmin||isSecretary) && <HistoryTab/>}
-            {activeTab==="members"     && isAdmin      && <MembersTab canEdit={true}/>}
-            {activeTab==="members"     && isSecretary  && <MembersTab/>}
-            {activeTab==="grp-members" && isLeader      && <MembersTab groupFilter={myGroup?.id}/>}
-            {activeTab==="grp-history" && isLeader      && <LeaderHistoryTab/>}
-            {activeTab==="users"       && isAdmin      && <UsersTab/>}
-            {activeTab==="qrcodes"     && isAdmin      && <QRCodesTab/>}
+            {activeTab==="members"     && isAdmin        && <MembersTab canEdit={true}/>}
+            {activeTab==="members"     && isSecretary    && <MembersTab/>}
+            {activeTab==="grp-members" && isLeader       && <MembersTab groupFilter={myGroup?.id}/>}
+            {activeTab==="grp-history" && isLeader       && <LeaderHistoryTab/>}
+            {activeTab==="users"       && isAdmin        && <UsersTab/>}
+            {activeTab==="qrcodes"     && isAdmin        && <QRCodesTab/>}
             {activeTab==="charts"      && <ChartsTab/>}
           </div>
         </div>

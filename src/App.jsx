@@ -835,10 +835,10 @@ export default function App(){
   // ── TABS config ───────────────────────────────────────────────
   // ── TABS config ───────────────────────────────────────────────
   const tabs=isAdmin
-    ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-totals",label:"📋 Secretary"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
+    ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-totals",label:"📋 Secretary"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
     :isSecretary
-    ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"history",label:"🗂 History"}]
-    :[{id:"attendance",label:"✅ Mark"},{id:"members",label:"👥 Members"},{id:"charts",label:"📈 Trends"}];
+    ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"}]
+    :[{id:"attendance",label:"✅ Mark"},{id:"charts",label:"📈 Trends"}];
 
   // ════════════════ ATTENDANCE TAB (leader only) ════════════════
   const AttendanceTab=()=>{
@@ -1005,7 +1005,7 @@ export default function App(){
   // ════════════════ SEC TOTALS ══════════════════════════════════
   const SecTotalsTab=()=>{
     const total=getTotalStats(selectedDate);
-    // Find today's submissions
+    const [expandedGroup,setExpandedGroup]=useState(null);
     const todaySubmissions=Object.values(submittedAtt).filter(s=>s.date===selectedDate);
     const allGroupsSubmitted=groups.length>0&&groups.every(g=>!!submittedAtt[`${g.id}_${selectedDate}`]);
     return(
@@ -1045,19 +1045,81 @@ export default function App(){
             <span className={`badge ${total.pct>=70?"badge-green":total.pct>=40?"badge-gold":"badge-red"}`} style={{fontSize:"0.82rem",padding:"4px 14px"}}>{total.pct}% Rate</span>
           </div>
         </div>
-        <p className="section-label">By Group</p>
+
+        <p className="section-label">By Group — <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,fontSize:"0.72rem"}}>tap to see member details</span></p>
         {groups.map(g=>{
           const st=getGroupStats(g.id,selectedDate);
+          const gm=members.filter(m=>m.groupId===g.id);
+          const presentList=gm.filter(m=>isPresent(selectedDate,m.id));
+          const absentList=gm.filter(m=>!isPresent(selectedDate,m.id));
+          const isOpen=expandedGroup===g.id;
           return(
-            <div className="card" key={g.id} style={{padding:"12px 14px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
-                <div style={{width:10,height:10,borderRadius:"50%",background:g.color}}/>
-                <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1,fontSize:"0.92rem"}}>{g.name}</span>
-                <span style={{fontWeight:700,fontSize:"0.82rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
-                <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
+            <div className="card" key={g.id} style={{padding:0,overflow:"hidden",border:isOpen?`2px solid ${g.color}`:undefined}}>
+              {/* ── Group header row (always visible, clickable) ── */}
+              <div style={{padding:"12px 14px",cursor:"pointer",background:g.color+"12"}}
+                onClick={()=>setExpandedGroup(isOpen?null:g.id)}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+                  <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1,fontSize:"0.92rem"}}>{g.name}</span>
+                  <span style={{fontWeight:700,fontSize:"0.82rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
+                  <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
+                  <span style={{color:"var(--muted)",fontSize:"0.85rem",marginLeft:2}}>{isOpen?"▲":"▼"}</span>
+                </div>
+                <div className="progress-bar"><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
+                {!isOpen&&absentList.length>0&&(
+                  <div style={{marginTop:5,fontSize:"0.7rem",color:"var(--red)"}}>
+                    ⚠ Absent: {absentList.map(m=>m.name.split(" ")[0]).join(", ")}
+                  </div>
+                )}
               </div>
-              <div className="progress-bar"><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
-              {st.absent>0&&<div style={{marginTop:5,fontSize:"0.7rem",color:"var(--red)"}}>⚠ {members.filter(m=>m.groupId===g.id&&!isPresent(selectedDate,m.id)).map(m=>m.name.replace(/^(Elder|Deacon|Deaconess)\s+/i,"").split(" ")[0]).join(", ")}</div>}
+
+              {/* ── Expanded member details ── */}
+              {isOpen&&(
+                <div style={{padding:"0 14px 14px",borderTop:`1px solid ${g.color}22`}}>
+                  {/* Present */}
+                  <div style={{marginTop:12,marginBottom:8}}>
+                    <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--green)",letterSpacing:"0.8px",textTransform:"uppercase",marginBottom:6}}>
+                      ✓ Present ({presentList.length})
+                    </div>
+                    {presentList.length===0
+                      ?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic",paddingLeft:4}}>Nobody marked present yet</div>
+                      :presentList.map(m=>(
+                        <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 4px",borderBottom:"1px solid var(--cream-dark)"}}>
+                          <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${g.color},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.72rem",flexShrink:0}}>{initials(m.name)}</div>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:700,fontSize:"0.84rem",color:"var(--navy)"}}>{m.name}</div>
+                            <span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                          </div>
+                          <span className="badge badge-green" style={{fontSize:"0.65rem"}}>✓ Present</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                  {/* Absent */}
+                  <div style={{marginTop:8}}>
+                    <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--red)",letterSpacing:"0.8px",textTransform:"uppercase",marginBottom:6}}>
+                      ✗ Absent ({absentList.length})
+                    </div>
+                    {absentList.length===0
+                      ?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic",paddingLeft:4}}>🎉 No absences!</div>
+                      :absentList.map(m=>(
+                        <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 4px",borderBottom:"1px solid var(--cream-dark)"}}>
+                          <div style={{width:30,height:30,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.72rem",flexShrink:0}}>{initials(m.name)}</div>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:700,fontSize:"0.84rem",color:"var(--muted)"}}>{m.name}</div>
+                            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:1}}>
+                              <span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                              {m.phone&&<span style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</span>}
+                              {m.residence&&<span style={{fontSize:"0.6rem",color:"var(--muted)"}}>📍 {m.residence}</span>}
+                            </div>
+                          </div>
+                          <span className="badge badge-red" style={{fontSize:"0.65rem"}}>✗ Absent</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1112,25 +1174,45 @@ export default function App(){
               value={rpt.notes} onChange={e=>saveReport(selectedDate,"notes",e.target.value)} style={{resize:"vertical"}}/>
           </div>
         </div>
-        {/* ─── BREAKDOWN (merged into Daily Rpt) ─── */}
-        <p className="section-label" style={{marginTop:6}}>🔢 Attendance Breakdown — By Category</p>
+        <div style={{margin:"0 12px",display:"flex",gap:8}}>
+          <button className="btn btn-teal" style={{flex:1}} onClick={()=>showAlert("Daily report saved! ✓")}>💾 Save</button>
+          <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / PDF</button>
+        </div>
+      </div>
+    );
+  };
+
+  // ════════════════ BREAKDOWN ═══════════════════════════════════
+  const BreakdownTab=()=>{
+    const catStats=getCategoryStats(selectedDate);
+    const total=getTotalStats(selectedDate);
+    return(
+      <div className="scroll-area">
+        <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+        <div className="summary-banner">
+          <h3>Attendance Breakdown — {formatDate(selectedDate)}</h3>
+          <div className="summary-grid">
+            {[{l:"Enrolled",v:total.total},{l:"Present",v:total.present},{l:"Rate",v:total.pct+"%"}].map(s=>(
+              <div className="summary-cell" key={s.l}><div className="summary-num">{s.v}</div><div className="summary-lbl">{s.l}</div></div>
+            ))}
+          </div>
+        </div>
+        <p className="section-label">By Member Category</p>
         <div className="demo-grid">
           {CATEGORIES.map(cat=>{
-            const cm=members.filter(m=>m.category===cat);
-            const pres=cm.filter(m=>isPresent(selectedDate,m.id)).length;
-            const pct=cm.length?Math.round(pres/cm.length*100):0;
-            if(cm.length===0)return null;
+            const s=catStats[cat];
+            const pct=s.total?Math.round(s.present/s.total*100):0;
             return(
               <div className="demo-box" key={cat}>
                 <div className="demo-label">{CAT_ICONS[cat]} {cat}</div>
-                <div className="demo-val">{pres}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{cm.length}</span></div>
+                <div className="demo-val">{s.present}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{s.total}</span></div>
                 <div style={{margin:"4px 0 2px"}} className="progress-bar"><div className="progress-fill" style={{width:pct+"%"}}/></div>
-                <div className="demo-sub">{cm.length-pres} absent · {pct}%</div>
+                <div className="demo-sub">{s.total-s.present} absent · {pct}%</div>
               </div>
             );
           })}
         </div>
-        <p className="section-label">By Group (Present / Absent)</p>
+        <p className="section-label">By Group (with Category Detail)</p>
         {groups.map(g=>{
           const st=getGroupStats(g.id,selectedDate);
           const gm=members.filter(m=>m.groupId===g.id);
@@ -1160,11 +1242,6 @@ export default function App(){
             </div>
           );
         })}
-
-        <div style={{margin:"8px 12px",display:"flex",gap:8}}>
-          <button className="btn btn-teal" style={{flex:1}} onClick={()=>showAlert("Daily report saved! ✓")}>💾 Save</button>
-          <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / PDF</button>
-        </div>
       </div>
     );
   };
@@ -1217,35 +1294,23 @@ export default function App(){
     );
   };
 
-  // ════════════════ MEMBERS (admin full-edit; leader view-only) ══════════
-  const MembersTab=({leaderMode=false})=>{
+  // ════════════════ MEMBERS (admin) ════════════════════════════
+  const MembersTab=()=>{
     const [search,setSearch]=useState("");
     const [fg,setFg]=useState("all");
     const [fc,setFc]=useState("all");
-    const [addMode,setAddMode]=useState(null);
-    const [viewM,setViewM]=useState(null);
-    const [editM,setEditM]=useState(null);
-    const [aName,setAName]=useState("");
-    const [aGid,setAGid]=useState(groups[0]?.id||"");
-    const [aCat,setACat]=useState("Male");
-    const [aGender,setAGender]=useState("Male");
-    const [aPhone,setAPhone]=useState("");
-    const [aRes,setARes]=useState("");
-    const [aOcc,setAOcc]=useState("");
+    const [addName,setAddName]=useState("");
+    const [addGid,setAddGid]=useState(groups[0]?.id||"");
+    const [addCat,setAddCat]=useState("Male");
     const [addGroupName,setAddGroupName]=useState("");
+    const [addMode,setAddMode]=useState(null);
 
-    const baseMembers=leaderMode?members.filter(m=>m.groupId===myGroup?.id):members;
-    const filtered=baseMembers.filter(m=>
-      m.name.toLowerCase().includes(search.toLowerCase())&&
-      (fg==="all"||m.groupId===fg)&&
-      (fc==="all"||m.category===fc)
-    );
+    const filtered=members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase())&&(fg==="all"||m.groupId===fg)&&(fc==="all"||m.category===fc));
 
     const saveMember=()=>{
-      if(!aName.trim()){showAlert("Full name required","error");return;}
-      setMembers(p=>[...p,{id:"m"+Date.now(),name:aName.trim(),groupId:aGid,category:aCat,gender:aGender,phone:aPhone.trim(),residence:aRes.trim(),occupation:aOcc.trim()}]);
-      showAlert(`${aName} added!`);
-      setAName("");setAPhone("");setARes("");setAOcc("");setAddMode(null);
+      if(!addName.trim())return;
+      setMembers(p=>[...p,{id:"m"+Date.now(),name:addName.trim(),groupId:addGid,category:addCat}]);
+      showAlert(`${addName} added!`);setAddName("");setAddMode(null);
     };
     const saveGroup=()=>{
       if(!addGroupName.trim())return;
@@ -1253,118 +1318,36 @@ export default function App(){
       setGroups(p=>[...p,{id:"g"+Date.now(),name:addGroupName.trim(),color}]);
       showAlert(`Group "${addGroupName}" created!`);setAddGroupName("");setAddMode(null);
     };
-    const saveEdit=()=>{
-      setMembers(p=>p.map(m=>m.id===editM.id?{...editM}:m));
-      showAlert("Member updated!");setEditM(null);
-    };
     const deleteMember=id=>{setMembers(p=>p.filter(m=>m.id!==id));showAlert("Member removed","info");};
 
     return(
       <div className="scroll-area">
-
-        {/* ── Profile view modal ── */}
-        {viewM&&(()=>{
-          const grp=groups.find(g=>g.id===viewM.groupId);
-          const fields=[
-            {icon:"👤",label:"Full Name",val:viewM.name},
-            {icon:"👥",label:"Group",val:grp?.name},
-            {icon:"🏷️",label:"Category",val:`${CAT_ICONS[viewM.category]||""} ${viewM.category||""}`},
-            {icon:"⚧",label:"Gender",val:viewM.gender},
-            {icon:"📞",label:"Telephone",val:viewM.phone},
-            {icon:"📍",label:"Residence",val:viewM.residence},
-            {icon:"💼",label:"Occupation",val:viewM.occupation},
-          ].filter(f=>f.val&&String(f.val).trim());
-          return(
-            <div className="modal-overlay" onClick={()=>setViewM(null)}>
-              <div className="modal" onClick={e=>e.stopPropagation()}>
-                <div className="modal-title">👤 Member Profile <span style={{cursor:"pointer"}} onClick={()=>setViewM(null)}>✕</span></div>
-                <div style={{textAlign:"center",margin:"4px 0 16px"}}>
-                  <div style={{width:62,height:62,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.4rem",margin:"0 auto 10px"}}>{initials(viewM.name)}</div>
-                  <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.05rem",fontWeight:700,color:"var(--navy)"}}>{viewM.name}</div>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:7}}>
-                  {fields.map(f=>(
-                    <div key={f.label} style={{display:"flex",alignItems:"center",gap:10,background:"var(--cream)",borderRadius:8,padding:"8px 12px"}}>
-                      <span style={{fontSize:"1rem",width:22,textAlign:"center",flexShrink:0}}>{f.icon}</span>
-                      <div>
-                        <div style={{fontSize:"0.6rem",color:"var(--muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>{f.label}</div>
-                        <div style={{fontSize:"0.88rem",fontWeight:600,color:"var(--navy)"}}>{f.val}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {!leaderMode&&<button className="btn btn-navy btn-full" style={{marginTop:14}} onClick={()=>{setEditM({...viewM});setViewM(null);}}>✏️ Edit Details</button>}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ── Edit modal ── */}
-        {editM&&(
-          <div className="modal-overlay" onClick={()=>setEditM(null)}>
-            <div className="modal" onClick={e=>e.stopPropagation()}>
-              <div className="modal-title">✏️ Edit Member <span style={{cursor:"pointer"}} onClick={()=>setEditM(null)}>✕</span></div>
-              <input className="input" placeholder="Full Name *" value={editM.name} onChange={e=>setEditM(p=>({...p,name:e.target.value}))}/>
-              <select className="select" value={editM.groupId||""} onChange={e=>setEditM(p=>({...p,groupId:e.target.value}))}>
-                {groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-              <select className="select" value={editM.category||"Male"} onChange={e=>setEditM(p=>({...p,category:e.target.value}))}>
-                {CATEGORIES.map(cat=><option key={cat} value={cat}>{CAT_ICONS[cat]} {cat}</option>)}
-              </select>
-              <select className="select" value={editM.gender||"Male"} onChange={e=>setEditM(p=>({...p,gender:e.target.value}))}>
-                <option value="Male">Male</option><option value="Female">Female</option>
-              </select>
-              <input className="input" placeholder="📞 Telephone" value={editM.phone||""} onChange={e=>setEditM(p=>({...p,phone:e.target.value}))}/>
-              <input className="input" placeholder="📍 Residence" value={editM.residence||""} onChange={e=>setEditM(p=>({...p,residence:e.target.value}))}/>
-              <input className="input" placeholder="💼 Occupation" value={editM.occupation||""} onChange={e=>setEditM(p=>({...p,occupation:e.target.value}))}/>
-              <div style={{display:"flex",gap:8,marginTop:4}}>
-                <button className="btn btn-outline" style={{flex:1}} onClick={()=>setEditM(null)}>Cancel</button>
-                <button className="btn btn-primary" style={{flex:1}} onClick={saveEdit}>Save</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Search & filters ── */}
         <div style={{margin:"10px 12px 0",display:"flex",gap:7}}>
-          <input className="input" placeholder="🔍 Search members..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:2,marginBottom:0}}/>
-          {!leaderMode&&(
-            <select className="select" value={fg} onChange={e=>setFg(e.target.value)} style={{flex:1,marginBottom:0}}>
-              <option value="all">All Groups</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          )}
+          <input className="input" placeholder="🔍 Search..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:2,marginBottom:0}}/>
+          <select className="select" value={fg} onChange={e=>setFg(e.target.value)} style={{flex:1,marginBottom:0}}>
+            <option value="all">All Groups</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
         </div>
         <div style={{margin:"6px 12px 0"}}>
           <select className="select" value={fc} onChange={e=>setFc(e.target.value)} style={{marginBottom:0}}>
-            <option value="all">All Categories</option>{CATEGORIES.map(cat=><option key={cat} value={cat}>{CAT_ICONS[cat]} {cat}</option>)}
+            <option value="all">All Categories</option>{CATEGORIES.map(c=><option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}
           </select>
         </div>
+        <div style={{margin:"8px 12px",display:"flex",gap:7}}>
+          <button className="btn btn-primary btn-sm" onClick={()=>setAddMode(addMode==="member"?null:"member")}>+ Member</button>
+          <button className="btn btn-navy btn-sm" onClick={()=>setAddMode(addMode==="group"?null:"group")}>+ Group</button>
+        </div>
 
-        {/* ── Admin-only buttons ── */}
-        {!leaderMode&&(
-          <div style={{margin:"8px 12px",display:"flex",gap:7}}>
-            <button className="btn btn-primary btn-sm" onClick={()=>setAddMode(addMode==="member"?null:"member")}>+ Member</button>
-            <button className="btn btn-navy btn-sm" onClick={()=>setAddMode(addMode==="group"?null:"group")}>+ Group</button>
-          </div>
-        )}
-
-        {/* ── Add member form ── */}
-        {!leaderMode&&addMode==="member"&&(
+        {addMode==="member"&&(
           <div className="card" style={{background:"#FEF9EF",border:"1.5px solid var(--gold)"}}>
             <div className="card-title">➕ Add New Member</div>
-            <input className="input" placeholder="Full Name *" value={aName} onChange={e=>setAName(e.target.value)}/>
-            <select className="select" value={aGid} onChange={e=>setAGid(e.target.value)}>
+            <input className="input" placeholder="Full Name" value={addName} onChange={e=>setAddName(e.target.value)}/>
+            <select className="select" value={addGid} onChange={e=>setAddGid(e.target.value)}>
               {groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
-            <select className="select" value={aCat} onChange={e=>setACat(e.target.value)}>
-              {CATEGORIES.map(cat=><option key={cat} value={cat}>{CAT_ICONS[cat]} {cat}</option>)}
+            <select className="select" value={addCat} onChange={e=>setAddCat(e.target.value)}>
+              {CATEGORIES.map(c=><option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}
             </select>
-            <select className="select" value={aGender} onChange={e=>setAGender(e.target.value)}>
-              <option value="Male">Male</option><option value="Female">Female</option>
-            </select>
-            <input className="input" placeholder="📞 Telephone" value={aPhone} onChange={e=>setAPhone(e.target.value)}/>
-            <input className="input" placeholder="📍 Residence" value={aRes} onChange={e=>setARes(e.target.value)}/>
-            <input className="input" placeholder="💼 Occupation" value={aOcc} onChange={e=>setAOcc(e.target.value)}/>
             <div style={{display:"flex",gap:8}}>
               <button className="btn btn-primary" style={{flex:1}} onClick={saveMember}>Add Member</button>
               <button className="btn btn-outline" style={{flex:1}} onClick={()=>setAddMode(null)}>Cancel</button>
@@ -1372,8 +1355,7 @@ export default function App(){
           </div>
         )}
 
-        {/* ── Add group form ── */}
-        {!leaderMode&&addMode==="group"&&(
+        {addMode==="group"&&(
           <div className="card" style={{background:"#F0F4FF",border:"1.5px solid var(--navy)"}}>
             <div className="card-title">➕ Add New Group</div>
             <input className="input" placeholder="Group Name (e.g. Bereans)" value={addGroupName} onChange={e=>setAddGroupName(e.target.value)}/>
@@ -1384,39 +1366,23 @@ export default function App(){
           </div>
         )}
 
-        {/* ── Member list ── */}
         <div className="card">
-          <div style={{fontSize:"0.72rem",color:"var(--muted)",marginBottom:8}}>
-            {filtered.length} member{filtered.length!==1?"s":""} shown{leaderMode?` · ${myGroup?.name}`:""}
-          </div>
+          <div style={{fontSize:"0.72rem",color:"var(--muted)",marginBottom:8}}>{filtered.length} member{filtered.length!==1?"s":""} shown</div>
           {filtered.length===0&&<div style={{textAlign:"center",color:"var(--muted)",padding:16,fontSize:"0.82rem"}}>No members found</div>}
           {filtered.map(m=>{
             const grp=groups.find(g=>g.id===m.groupId);
             return(
-              <div className="member-row" key={m.id} style={{cursor:"pointer"}} onClick={()=>setViewM(m)}>
+              <div className="member-row" key={m.id}>
                 <div className="avatar" style={{background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`}}>{initials(m.name)}</div>
-                <div className="member-info" style={{flex:1}}>
+                <div className="member-info">
                   <div className="member-name">{m.name}</div>
-                  <div style={{display:"flex",gap:4,marginTop:2,flexWrap:"wrap"}}>
-                    {!leaderMode&&<span className="badge badge-blue" style={{fontSize:"0.6rem"}}>{grp?.name}</span>}
+                  <div style={{display:"flex",gap:4,marginTop:2}}>
+                    <span className="badge badge-blue" style={{fontSize:"0.6rem"}}>{grp?.name}</span>
                     <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
-                    {m.gender&&<span className="badge badge-teal" style={{fontSize:"0.6rem"}}>{m.gender}</span>}
                   </div>
-                  {(m.phone||m.residence||m.occupation)&&(
-                    <div style={{marginTop:3,fontSize:"0.62rem",color:"var(--muted)",display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {m.phone&&<span>📞 {m.phone}</span>}
-                      {m.residence&&<span>📍 {m.residence}</span>}
-                      {m.occupation&&<span>💼 {m.occupation}</span>}
-                    </div>
-                  )}
                 </div>
-                {!leaderMode&&(
-                  <div style={{display:"flex",gap:4,flexShrink:0}} onClick={e=>e.stopPropagation()}>
-                    <button className="btn btn-outline btn-sm" onClick={()=>setModal({type:"qr",member:m})}>QR</button>
-                    <button className="btn btn-sm" style={{background:"#EEF2FF",color:"var(--navy)",border:"1px solid #C5CAE9"}} onClick={()=>setEditM({...m})}>✏️</button>
-                    <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteMember(m.id)}>✕</button>
-                  </div>
-                )}
+                <button className="btn btn-outline btn-sm" style={{marginRight:4}} onClick={()=>setModal({type:"qr",member:m})}>QR</button>
+                <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteMember(m.id)}>✕</button>
               </div>
             );
           })}
@@ -1804,6 +1770,231 @@ export default function App(){
     );
   };
 
+  // ════════════════ MONTHLY ANALYSIS ══════════════════════════
+  const MonthTab=()=>{
+    const now=new Date();
+    const [selYear,setSelYear]=useState(now.getFullYear());
+    const [selMonth,setSelMonth]=useState(now.getMonth()); // 0-indexed
+
+    const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+    // All attendance dates that fall in selected month/year
+    const allDates=[...new Set(Object.keys(attendance).map(k=>k.split("|")[0]))]
+      .filter(d=>{const dt=new Date(d);return dt.getFullYear()===selYear&&dt.getMonth()===selMonth;})
+      .sort();
+
+    // All report dates in month (even if no attendance recorded)
+    const reportDates=[...new Set([...allDates,...Object.keys(dailyReports).filter(d=>{const dt=new Date(d);return dt.getFullYear()===selYear&&dt.getMonth()===selMonth;})])].sort();
+
+    // Aggregate stats across all dates in month
+    const monthStats=allDates.map(date=>{
+      const t=getTotalStats(date);
+      const rpt=getReport(date);
+      return{date,present:t.present,absent:t.absent,total:t.total,pct:t.pct,
+        offertory:parseFloat(rpt.offertory)||0,tithe:parseFloat(rpt.tithe)||0,
+        visitors:parseInt(rpt.visitors)||0,soulsWon:parseInt(rpt.soulsWon)||0,
+        holySpirit:parseInt(rpt.holySpirit)||0,bibleStudy:parseInt(rpt.bibleStudy)||0,
+        activities:rpt.activities,notes:rpt.notes};
+    });
+
+    const totalSessions=monthStats.length;
+    const avgPresent=totalSessions?Math.round(monthStats.reduce((s,d)=>s+d.present,0)/totalSessions):0;
+    const avgPct=totalSessions?Math.round(monthStats.reduce((s,d)=>s+d.pct,0)/totalSessions):0;
+    const bestDay=monthStats.length?monthStats.reduce((a,b)=>a.pct>b.pct?a:b,monthStats[0]):null;
+    const worstDay=monthStats.length?monthStats.reduce((a,b)=>a.pct<b.pct?a:b,monthStats[0]):null;
+    const totalOffertory=monthStats.reduce((s,d)=>s+d.offertory,0);
+    const totalTithe=monthStats.reduce((s,d)=>s+d.tithe,0);
+    const totalVisitors=monthStats.reduce((s,d)=>s+d.visitors,0);
+    const totalSouls=monthStats.reduce((s,d)=>s+d.soulsWon,0);
+    const totalHS=monthStats.reduce((s,d)=>s+d.holySpirit,0);
+
+    // Per-member attendance count across the month
+    const memberCounts={};
+    members.forEach(m=>{
+      memberCounts[m.id]=allDates.filter(d=>isPresent(d,m.id)).length;
+    });
+    // Most faithful (present all sessions) & most absent
+    const faithful=members.filter(m=>totalSessions>0&&memberCounts[m.id]===totalSessions);
+    const neverPresent=members.filter(m=>totalSessions>0&&memberCounts[m.id]===0);
+
+    // Group performance for the month
+    const groupMonthStats=groups.map(g=>{
+      const gm=members.filter(m=>m.groupId===g.id);
+      const totalSlots=gm.length*totalSessions;
+      const totalPresent=allDates.reduce((s,d)=>s+gm.filter(m=>isPresent(d,m.id)).length,0);
+      const pct=totalSlots?Math.round(totalPresent/totalSlots*100):0;
+      return{...g,totalPresent,totalSlots,pct,sessions:totalSessions};
+    }).sort((a,b)=>b.pct-a.pct);
+
+    return(
+      <div className="scroll-area">
+        {/* Month/Year Picker */}
+        <div style={{margin:"10px 12px 0",display:"flex",gap:8}}>
+          <select className="select" value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={{flex:2,marginBottom:0}}>
+            {MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}
+          </select>
+          <select className="select" value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={{flex:1,marginBottom:0}}>
+            {[now.getFullYear()-1,now.getFullYear(),now.getFullYear()+1].map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+
+        {totalSessions===0?(
+          <div className="card" style={{textAlign:"center",padding:"40px 20px",margin:"16px 12px"}}>
+            <div style={{fontSize:"2.5rem",marginBottom:10}}>📭</div>
+            <div style={{fontFamily:"Playfair Display,serif",fontSize:"1rem",color:"var(--navy)",marginBottom:6}}>No attendance data</div>
+            <div style={{fontSize:"0.8rem",color:"var(--muted)"}}>No records found for {MONTHS[selMonth]} {selYear}</div>
+          </div>
+        ):(
+          <>
+            {/* ── Summary Banner ── */}
+            <div className="summary-banner" style={{margin:"10px 12px 0"}}>
+              <h3>📅 {MONTHS[selMonth]} {selYear}</h3>
+              <div className="summary-grid">
+                {[{l:"Sessions",v:totalSessions},{l:"Avg Present",v:avgPresent},{l:"Avg Rate",v:avgPct+"%"}].map(s=>(
+                  <div className="summary-cell" key={s.l}><div className="summary-num">{s.v}</div><div className="summary-lbl">{s.l}</div></div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Best / Worst day ── */}
+            {bestDay&&(
+              <div style={{margin:"10px 12px 0",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div style={{background:"#D5F5E3",borderRadius:10,padding:"10px 12px"}}>
+                  <div style={{fontSize:"0.62rem",color:"var(--green)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>🏆 Best Day</div>
+                  <div style={{fontFamily:"Playfair Display,serif",fontSize:"0.88rem",fontWeight:700,color:"var(--navy)"}}>{formatDate(bestDay.date)}</div>
+                  <div style={{fontSize:"0.78rem",color:"var(--green)",fontWeight:700,marginTop:2}}>{bestDay.pct}% · {bestDay.present} present</div>
+                </div>
+                <div style={{background:"#FFF5F5",borderRadius:10,padding:"10px 12px"}}>
+                  <div style={{fontSize:"0.62rem",color:"var(--red)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:4}}>📉 Lowest Day</div>
+                  <div style={{fontFamily:"Playfair Display,serif",fontSize:"0.88rem",fontWeight:700,color:"var(--navy)"}}>{formatDate(worstDay.date)}</div>
+                  <div style={{fontSize:"0.78rem",color:"var(--red)",fontWeight:700,marginTop:2}}>{worstDay.pct}% · {worstDay.present} present</div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Financial Summary ── */}
+            {(totalOffertory>0||totalTithe>0)&&(
+              <>
+                <p className="section-label">💰 Financial Summary</p>
+                <div style={{margin:"0 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div style={{background:"var(--cream)",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                    <div style={{fontSize:"0.62rem",color:"var(--muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>🪙 Total Offertory</div>
+                    <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.1rem",fontWeight:700,color:"var(--green)",marginTop:4}}>GHS {totalOffertory.toFixed(2)}</div>
+                    <div style={{fontSize:"0.65rem",color:"var(--muted)",marginTop:2}}>{totalSessions} sessions</div>
+                  </div>
+                  <div style={{background:"var(--cream)",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                    <div style={{fontSize:"0.62rem",color:"var(--muted)",textTransform:"uppercase",letterSpacing:"0.5px"}}>💵 Total Tithe</div>
+                    <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.1rem",fontWeight:700,color:"var(--gold)",marginTop:4}}>GHS {totalTithe.toFixed(2)}</div>
+                    <div style={{fontSize:"0.65rem",color:"var(--muted)",marginTop:2}}>Avg: GHS {totalSessions?(totalTithe/totalSessions).toFixed(2):"0.00"}</div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── Spiritual Summary ── */}
+            {(totalVisitors>0||totalSouls>0||totalHS>0)&&(
+              <>
+                <p className="section-label">🌱 Spiritual Summary</p>
+                <div style={{margin:"0 12px",display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {totalVisitors>0&&<div style={{flex:1,minWidth:80,background:"#EBF5FB",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:"1.4rem"}}>🙋</div><div style={{fontWeight:700,fontSize:"1rem",color:"var(--navy)"}}>{totalVisitors}</div><div style={{fontSize:"0.65rem",color:"var(--muted)"}}>Visitors</div></div>}
+                  {totalSouls>0&&<div style={{flex:1,minWidth:80,background:"#F5EEF8",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:"1.4rem"}}>✨</div><div style={{fontWeight:700,fontSize:"1rem",color:"var(--navy)"}}>{totalSouls}</div><div style={{fontSize:"0.65rem",color:"var(--muted)"}}>Souls Won</div></div>}
+                  {totalHS>0&&<div style={{flex:1,minWidth:80,background:"#E8F8F5",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:"1.4rem"}}>🕊️</div><div style={{fontWeight:700,fontSize:"1rem",color:"var(--navy)"}}>{totalHS}</div><div style={{fontSize:"0.65rem",color:"var(--muted)"}}>HS Baptism</div></div>}
+                </div>
+              </>
+            )}
+
+            {/* ── Group Performance ── */}
+            <p className="section-label">👥 Group Performance</p>
+            {groupMonthStats.map((g,i)=>(
+              <div className="card" key={g.id} style={{padding:"11px 14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <span style={{fontSize:"0.72rem",fontWeight:700,color:"var(--muted)",width:16}}>#{i+1}</span>
+                  <div style={{width:9,height:9,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+                  <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1}}>{g.name}</span>
+                  <span style={{fontSize:"0.78rem",fontWeight:700,color:"var(--navy)"}}>{g.totalPresent}/{g.totalSlots}</span>
+                  <span className={`badge ${g.pct>=70?"badge-green":g.pct>=40?"badge-gold":"badge-red"}`}>{g.pct}%</span>
+                </div>
+                <div className="progress-bar"><div className="progress-fill" style={{width:g.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
+              </div>
+            ))}
+
+            {/* ── Faithful Members ── */}
+            {faithful.length>0&&(
+              <>
+                <p className="section-label">🌟 Perfect Attendance ({faithful.length})</p>
+                <div className="card">
+                  {faithful.map(m=>{
+                    const grp=groups.find(g=>g.id===m.groupId);
+                    return(
+                      <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                        <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.72rem",flexShrink:0}}>{initials(m.name)}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:"0.84rem"}}>{m.name}</div>
+                          <span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{grp?.name}</span>
+                        </div>
+                        <span style={{fontSize:"0.75rem",color:"var(--green)",fontWeight:700}}>✓ {totalSessions}/{totalSessions}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── Never Present ── */}
+            {neverPresent.length>0&&(
+              <>
+                <p className="section-label">⚠️ Never Attended ({neverPresent.length})</p>
+                <div className="card">
+                  {neverPresent.map(m=>{
+                    const grp=groups.find(g=>g.id===m.groupId);
+                    return(
+                      <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                        <div style={{width:32,height:32,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.72rem",flexShrink:0}}>{initials(m.name)}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:"0.84rem",color:"var(--muted)"}}>{m.name}</div>
+                          <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:1}}>
+                            <span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{grp?.name}</span>
+                            {m.phone&&<span style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</span>}
+                          </div>
+                        </div>
+                        <span style={{fontSize:"0.75rem",color:"var(--red)",fontWeight:700}}>✗ 0/{totalSessions}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── Session-by-Session Log ── */}
+            <p className="section-label">📋 Session Log</p>
+            {monthStats.map(d=>{
+              const rpt=getReport(d.date);
+              return(
+                <div className="card" key={d.date} style={{padding:"11px 14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                    <div>
+                      <div style={{fontFamily:"Playfair Display,serif",fontWeight:700,fontSize:"0.88rem"}}>{formatDate(d.date)}</div>
+                      <div style={{fontSize:"0.68rem",color:"var(--muted)",marginTop:1}}>{d.present} present · {d.absent} absent</div>
+                    </div>
+                    <span className={`badge ${d.pct>=70?"badge-green":d.pct>=40?"badge-gold":"badge-red"}`}>{d.pct}%</span>
+                  </div>
+                  <div className="progress-bar" style={{marginBottom:6}}><div className="progress-fill" style={{width:d.pct+"%"}}/></div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                    {rpt.offertory&&<span className="badge badge-green" style={{fontSize:"0.6rem"}}>🪙 GHS {rpt.offertory}</span>}
+                    {rpt.tithe&&<span className="badge badge-gold" style={{fontSize:"0.6rem"}}>💵 GHS {rpt.tithe}</span>}
+                    {rpt.visitors&&rpt.visitors!=="0"&&<span className="badge badge-blue" style={{fontSize:"0.6rem"}}>🙋 {rpt.visitors} visitors</span>}
+                    {rpt.soulsWon&&rpt.soulsWon!=="0"&&<span className="badge badge-purple" style={{fontSize:"0.6rem"}}>✨ {rpt.soulsWon} souls</span>}
+                    {rpt.activities&&<span className="badge badge-gray" style={{fontSize:"0.6rem"}}>📌 {rpt.activities}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </div>
+    );
+  };
+
   // ════════════════ RENDER ══════════════════════════════════════
   const roleLabel=isAdmin?"Pastor / Admin":isSecretary?"Church Secretary":`Leader · ${myGroup?.name||""}`;
 
@@ -1811,16 +2002,16 @@ export default function App(){
   const navSections = isAdmin
     ? [
         { label: "Overview",   items: tabs.filter(t=>["dashboard","charts"].includes(t.id)) },
-        { label: "Secretary",  items: tabs.filter(t=>["sec-totals","sec-report","history"].includes(t.id)) },
+        { label: "Secretary",  items: tabs.filter(t=>["sec-totals","sec-report","month","history"].includes(t.id)) },
         { label: "Admin",      items: tabs.filter(t=>["members","users","qrcodes"].includes(t.id)) },
       ]
     : isSecretary
     ? [
-        { label: "Reports",    items: tabs.filter(t=>["sec-totals","sec-report","history"].includes(t.id)) },
+        { label: "Reports",    items: tabs.filter(t=>["sec-totals","sec-report","month","history"].includes(t.id)) },
         { label: "Trends",     items: tabs.filter(t=>["charts"].includes(t.id)) },
       ]
     : [
-        { label: "My Group",   items: tabs.filter(t=>["attendance","members","charts"].includes(t.id)) },
+        { label: "My Group",   items: tabs.filter(t=>["attendance","charts"].includes(t.id)) },
       ];
 
   return(
@@ -1884,11 +2075,11 @@ export default function App(){
             {alert&&<div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
 
             {activeTab==="attendance"  && isLeader    && <AttendanceTab/>}
-            {activeTab==="dashboard"   && isAdmin && <DashboardTab/>}
-            {activeTab==="members"     && isLeader      && <MembersTab leaderMode={true}/>}
+            {activeTab==="dashboard"   && (isAdmin||isLeader) && <DashboardTab/>}
             {activeTab==="sec-totals"  && (isAdmin||isSecretary) && <SecTotalsTab/>}
             {activeTab==="sec-report"  && (isAdmin||isSecretary) && <SecReportTab/>}
-
+            {activeTab==="breakdown"   && (isAdmin||isSecretary) && <BreakdownTab/>}
+            {activeTab==="month"       && (isAdmin||isSecretary) && <MonthTab/>}
             {activeTab==="history"     && (isAdmin||isSecretary) && <HistoryTab/>}
             {activeTab==="members"     && isAdmin      && <MembersTab/>}
             {activeTab==="users"       && isAdmin      && <UsersTab/>}

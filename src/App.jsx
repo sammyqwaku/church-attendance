@@ -364,6 +364,7 @@ const STYLE = `
 const GROUP_COLORS=["#C9973A","#2980B9","#27AE60","#8E44AD","#E74C3C","#16A085","#D35400","#2C3E50","#C0392B","#1ABC9C"];
 const CATEGORIES=["Elder","Deacon","Deaconess","Male","Female","Children"];
 const SERVICE_TYPES=["Sunday Morning","Mid-Week","Friday Evening"];
+const ROLE_COLORS={"admin":"#C9973A","secretary":"#2980B9","leader":"#27AE60"};
 const SERVICE_ICONS={"Sunday Morning":"☀️","Mid-Week":"📖","Friday Evening":"🌙"};
 const CAT_ICONS={Elder:"👴",Deacon:"👨‍⚖️",Deaconess:"👩‍⚖️",Male:"👨",Female:"👩",Children:"🧒"};
 

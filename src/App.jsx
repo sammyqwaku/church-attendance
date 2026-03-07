@@ -2352,6 +2352,22 @@ export default function App(){
       }finally{setPhotoLoading(false);}
     };
 
+    // Leader photo update — saves directly to member record in Firebase
+    const handleLeaderPhotoUpdate=async(file,memberId)=>{
+      if(!file)return;
+      if(file.size>10*1024*1024){showAlert("Photo too large. Please choose a smaller image.","error");return;}
+      setPhotoLoading(true);
+      try{
+        const compressed=await compressImage(file);
+        setMembers(p=>p.map(m=>m.id===memberId?{...m,photo:compressed}:m));
+        // Update viewM so modal shows new photo instantly
+        setViewM(prev=>prev?{...prev,photo:compressed}:prev);
+        showAlert("📸 Photo updated successfully!","success");
+      }catch(err){
+        showAlert("Could not process image. Try another photo.","error");
+      }finally{setPhotoLoading(false);}
+    };
+
     const base=groupFilter?members.filter(m=>m.groupId===groupFilter):members;
     const filtered=base.filter(m=>
       m.name.toLowerCase().includes(search.toLowerCase())&&
@@ -2398,13 +2414,57 @@ export default function App(){
                 <div className="modal-title">👤 Member Profile <span style={{cursor:"pointer"}} onClick={()=>setViewM(null)}>✕</span></div>
                 <div style={{textAlign:"center",margin:"4px 0 16px"}}>
                   <div style={{position:"relative",display:"inline-block",marginBottom:10}}>
-                    {viewM.photo
-                      ?<img src={viewM.photo} alt={viewM.name} style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",border:`3px solid ${grp?.color||"var(--gold)"}`,boxShadow:"0 4px 16px rgba(0,0,0,0.15)"}}/>
-                      :<div style={{width:80,height:80,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.8rem"}}>{initials(viewM.name)}</div>
-                    }
-                    <div style={{position:"absolute",bottom:2,right:2,width:18,height:18,borderRadius:"50%",background:grp?.color||"var(--navy)",border:"2px solid white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.55rem"}}>✝</div>
+                    <label style={{cursor:groupFilter?"pointer":"default",display:"block",position:"relative"}}>
+                      {viewM.photo
+                        ?<img src={viewM.photo} alt={viewM.name} style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",border:`3px solid ${grp?.color||"var(--gold)"}`,boxShadow:"0 4px 16px rgba(0,0,0,0.15)",opacity:photoLoading?0.5:1}}/>
+                        :<div style={{width:80,height:80,borderRadius:"50%",background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.8rem",opacity:photoLoading?0.5:1}}>{initials(viewM.name)}</div>
+                      }
+                      {/* Camera icon badge — always show for leaders, cross for others */}
+                      <div style={{position:"absolute",bottom:2,right:2,width:22,height:22,borderRadius:"50%",
+                        background:groupFilter?"var(--gold)":grp?.color||"var(--navy)",
+                        border:"2px solid white",display:"flex",alignItems:"center",
+                        justifyContent:"center",fontSize:"0.6rem",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}>
+                        {groupFilter?(photoLoading?"⏳":"📷"):"✝"}
+                      </div>
+                      {/* Hidden file input — only active for leaders */}
+                      {groupFilter&&(
+                        <input type="file" accept="image/*" capture="environment"
+                          style={{display:"none"}}
+                          onChange={e=>e.target.files[0]&&handleLeaderPhotoUpdate(e.target.files[0],viewM.id)}/>
+                      )}
+                    </label>
                   </div>
+                  {/* Tap hint for leaders */}
+                  {groupFilter&&(
+                    <div style={{fontSize:"0.65rem",color:"var(--gold)",fontWeight:700,marginBottom:4}}>
+                      {photoLoading?"⏳ Saving photo...":"📷 Tap photo to take/change"}
+                    </div>
+                  )}
                   <div style={{fontFamily:"Playfair Display,serif",fontSize:"1.05rem",fontWeight:700,color:"var(--navy)"}}>{viewM.name}</div>
+                  {/* Camera buttons for leader — take photo or upload from gallery */}
+                  {groupFilter&&!photoLoading&&(
+                    <div style={{display:"flex",gap:8,marginTop:8,justifyContent:"center"}}>
+                      <label style={{display:"flex",alignItems:"center",gap:5,background:"var(--navy)",color:"white",
+                        borderRadius:20,padding:"6px 14px",fontSize:"0.72rem",fontWeight:700,cursor:"pointer"}}>
+                        📷 Camera
+                        <input type="file" accept="image/*" capture="environment" style={{display:"none"}}
+                          onChange={e=>e.target.files[0]&&handleLeaderPhotoUpdate(e.target.files[0],viewM.id)}/>
+                      </label>
+                      <label style={{display:"flex",alignItems:"center",gap:5,background:"var(--gold)",color:"white",
+                        borderRadius:20,padding:"6px 14px",fontSize:"0.72rem",fontWeight:700,cursor:"pointer"}}>
+                        🖼️ Gallery
+                        <input type="file" accept="image/*" style={{display:"none"}}
+                          onChange={e=>e.target.files[0]&&handleLeaderPhotoUpdate(e.target.files[0],viewM.id)}/>
+                      </label>
+                      {viewM.photo&&(
+                        <button onClick={()=>{setMembers(p=>p.map(m=>m.id===viewM.id?{...m,photo:null}:m));setViewM(prev=>({...prev,photo:null}));}}
+                          style={{display:"flex",alignItems:"center",gap:4,background:"#FFF0F0",color:"var(--red)",
+                            border:"1px solid #FAD7D7",borderRadius:20,padding:"6px 12px",fontSize:"0.72rem",fontWeight:700,cursor:"pointer"}}>
+                          ✕ Remove
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:7}}>
                   {fields.map(f=>(

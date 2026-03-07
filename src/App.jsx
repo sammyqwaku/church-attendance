@@ -403,6 +403,22 @@ function initials(name){return name.replace(/^(Elder|Deacon|Deaconess)\s+/i,"").
 
 // QRSvg defined above as FallbackQR alias
 
+// ── PIN HASHING (SHA-256 via Web Crypto API) ──────────────────
+async function hashPin(pin){
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin + "cop_christ_temple_salt");
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2,"0")).join("");
+}
+// Synchronous check helper — compares a plain PIN to a stored hash
+async function verifyPin(plain, stored){
+  // If stored looks like a plain PIN (≤6 chars), compare directly (migration path)
+  if(stored.length <= 6) return plain === stored;
+  const h = await hashPin(plain);
+  return h === stored;
+}
+
 function DatePicker({value,onChange}){
   return (
     <div style={{margin:"10px 12px 4px",display:"flex",alignItems:"center",gap:8}}>
@@ -916,6 +932,26 @@ export default function App(){
     deleteData("church_currentUser");
   }, []);
 
+  // ── SESSION TIMEOUT — auto sign out after 30 minutes of inactivity ──
+  const lastActivityRef = useRef(Date.now());
+  const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+  useEffect(() => {
+    if (!currentUser) return;
+    const events = ["click","keydown","touchstart","scroll","mousemove"];
+    const resetTimer = () => { lastActivityRef.current = Date.now(); };
+    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    const interval = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > TIMEOUT_MS) {
+        setCurrentUser(null);
+        showAlert("You have been signed out due to inactivity.","info");
+      }
+    }, 60000); // check every minute
+    return () => {
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+      clearInterval(interval);
+    };
+  }, [currentUser]);
+
   // ── SEED SAMPLE HISTORICAL DATA (for demo charts) ─────────────
   useEffect(()=>{
     if(!attLoaded||!rptLoaded) return; // wait for Firebase to load first
@@ -954,10 +990,19 @@ export default function App(){
   const showAlert=(msg,type="success")=>{setAlert({msg,type});setTimeout(()=>setAlert(null),3200);};
 
   // ── LOGIN ─────────────────────────────────────────────────────
-  const handleLogin=()=>{
-    const user=users.find(u=>u.pin===loginPin&&(!loginRole||u.role===loginRole));
-    if(user){setCurrentUser(user);setLoginError("");setLoginPin("");setActiveTab(user.role==="admin"?"dashboard":user.role==="secretary"?"sec-totals":"attendance");}
-    else{setLoginError("Incorrect PIN or role. Try again.");setLoginPin("");}
+  const handleLogin=async()=>{
+    const candidates=users.filter(u=>!loginRole||u.role===loginRole);
+    let matched=null;
+    for(const u of candidates){
+      const ok=await verifyPin(loginPin,u.pin);
+      if(ok){matched=u;break;}
+    }
+    if(matched){
+      setCurrentUser(matched);setLoginError("");setLoginPin("");
+      setActiveTab(matched.role==="admin"?"dashboard":matched.role==="secretary"?"sec-totals":"attendance");
+    } else {
+      setLoginError("Incorrect PIN or role. Try again.");setLoginPin("");
+    }
   };
 
   // ── QR CHECK-IN SIMULATION ────────────────────────────────────
@@ -999,11 +1044,7 @@ export default function App(){
               style={{fontSize:"1.2rem",letterSpacing:"8px",textAlign:"center"}}/>
             {loginError&&<div className="alert alert-error" style={{margin:"0 0 10px"}}>{loginError}</div>}
             <button className="btn btn-navy btn-full" onClick={handleLogin}>Sign In →</button>
-            <div style={{marginTop:14,padding:"10px",background:"#F8F9FA",borderRadius:8,fontSize:"0.72rem",color:"#666"}}>
-              <strong>Demo PINs:</strong><br/>
-              Pastor: <strong>1234</strong> · Secretary: <strong>5678</strong><br/>
-              Leaders: <strong>1111</strong> / <strong>2222</strong> / <strong>3333</strong>
-            </div>
+
           </div>
         </div>
       </>
@@ -1046,8 +1087,9 @@ export default function App(){
   const saveReport=(date,field,val)=>setDailyReports(p=>({...p,[date]:{...getReport(date),[field]:val}}));
 
   // ── TABS config ───────────────────────────────────────────────
+  const todayNewSubs=Object.values(submittedAtt).filter(s=>s.date===todayStr()).length;
   const tabs=isAdmin
-    ?[{id:"dashboard",label:"📊 Dash"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
+    ?[{id:"dashboard",label:"📊 Dash"+(todayNewSubs>0?` 🔴${todayNewSubs}`:"")},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
     :isSecretary
     ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"}]
     :[{id:"attendance",label:"✅ Mark"},{id:"grp-members",label:"👥 My Group"},{id:"month",label:"📅 Month"},{id:"grp-history",label:"🗂 History"}];
@@ -1191,9 +1233,53 @@ export default function App(){
   // ════════════════ DASHBOARD (admin + leader) ══════════════════
   const DashboardTab=()=>{
     const total=getTotalStats(selectedDate);
+    const todaySubs=Object.values(submittedAtt).filter(s=>s.date===todayStr());
+    const pendingGroups=groups.filter(g=>!submittedAtt[`${g.id}_${todayStr()}`]);
     return(
       <div className="scroll-area">
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+
+        {/* ── Submission Notifications Panel ── */}
+        {todaySubs.length>0&&(
+          <div style={{margin:"8px 12px",borderRadius:12,overflow:"hidden",border:"1.5px solid var(--gold)"}}>
+            <div style={{background:"var(--navy)",padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{color:"var(--gold-light)",fontWeight:700,fontSize:"0.8rem"}}>📥 Today's Submissions</span>
+              <span className={`badge ${pendingGroups.length===0?"badge-green":"badge-gold"}`} style={{fontSize:"0.65rem"}}>
+                {todaySubs.length}/{groups.length} groups
+              </span>
+            </div>
+            <div style={{background:"white",padding:"8px 14px"}}>
+              {groups.map(g=>{
+                const sub=submittedAtt[`${g.id}_${todayStr()}`];
+                return(
+                  <div key={g.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+                    <span style={{flex:1,fontSize:"0.8rem",fontWeight:600,color:"var(--navy)"}}>{g.name}</span>
+                    {sub
+                      ?<div style={{textAlign:"right"}}>
+                        <span className="badge badge-green" style={{fontSize:"0.6rem"}}>✅ {sub.present}/{sub.total}</span>
+                        <div style={{fontSize:"0.58rem",color:"var(--muted)",marginTop:1}}>by {sub.submittedBy}</div>
+                      </div>
+                      :<span className="badge badge-gray" style={{fontSize:"0.6rem"}}>⏳ Pending</span>
+                    }
+                  </div>
+                );
+              })}
+              {pendingGroups.length>0&&(
+                <div style={{marginTop:6,fontSize:"0.7rem",color:"var(--gold)",fontWeight:700}}>
+                  ⏳ Still waiting: {pendingGroups.map(g=>g.name).join(", ")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {todaySubs.length===0&&(
+          <div style={{margin:"8px 12px",background:"#FEF9EF",borderRadius:10,padding:"10px 14px",border:"1.5px solid var(--gold)"}}>
+            <div style={{fontSize:"0.78rem",color:"var(--gold)",fontWeight:700}}>📋 No submissions yet today</div>
+            <div style={{fontSize:"0.7rem",color:"var(--muted)",marginTop:2}}>Waiting for group leaders to submit attendance.</div>
+          </div>
+        )}
+
         <div className="stats-row">
           <div className="stat-box"><div className="stat-num">{total.total}</div><div className="stat-label">Total</div></div>
           <div className="stat-box"><div className="stat-num" style={{color:"var(--green)"}}>{total.present}</div><div className="stat-label">Present</div></div>
@@ -1729,10 +1815,14 @@ export default function App(){
     const [confirmPin,setConfirmPin]=useState("");
     const [pinSuccess,setPinSuccess]=useState("");
 
-    const saveUser=()=>{
+    const saveUser=async()=>{
       if(!addName.trim()||addPin.length<4){showAlert("Name and 4-digit PIN required","error");return;}
-      if(users.find(u=>u.pin===addPin)){showAlert("PIN already in use. Choose another.","error");return;}
-      setUsers(p=>[...p,{id:"u"+Date.now(),name:addName.trim(),role:addRole,pin:addPin,groupId:addRole==="leader"?addGid:null}]);
+      for(const u of users){
+        const dup=await verifyPin(addPin,u.pin);
+        if(dup){showAlert("PIN already in use. Choose another.","error");return;}
+      }
+      const hashed=await hashPin(addPin);
+      setUsers(p=>[...p,{id:"u"+Date.now(),name:addName.trim(),role:addRole,pin:hashed,groupId:addRole==="leader"?addGid:null}]);
       showAlert(`${addName} (${addRole}) added!`);setAddName("");setAddPin("");setShowForm(false);
     };
     const deleteUser=id=>{
@@ -1740,14 +1830,20 @@ export default function App(){
       setUsers(p=>p.filter(u=>u.id!==id));showAlert("User removed","info");
     };
     const openPinModal=(user)=>{setPinModal(user);setNewPin("");setConfirmPin("");setPinSuccess("");};
-    const savePin=()=>{
+    const savePin=async()=>{
       if(newPin.length<4){showAlert("PIN must be at least 4 digits","error");return;}
       if(newPin!==confirmPin){showAlert("PINs do not match","error");return;}
-      if(users.find(u=>u.pin===newPin&&u.id!==pinModal.id)){showAlert("PIN already in use. Choose another.","error");return;}
-      setUsers(p=>p.map(u=>u.id===pinModal.id?{...u,pin:newPin}:u));
+      // Check for duplicate PIN — verify against all other users
+      for(const u of users){
+        if(u.id===pinModal.id) continue;
+        const dup=await verifyPin(newPin,u.pin);
+        if(dup){showAlert("PIN already in use. Choose another.","error");return;}
+      }
+      const hashed=await hashPin(newPin);
+      setUsers(p=>p.map(u=>u.id===pinModal.id?{...u,pin:hashed}:u));
       // If pastor changed their own PIN, update session too
       if(pinModal.id===currentUser.id){
-        const updated={...currentUser,pin:newPin};
+        const updated={...currentUser,pin:hashed};
         try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
       }
       setPinSuccess(`✅ PIN for ${pinModal.name} has been changed successfully!`);
@@ -1871,6 +1967,29 @@ export default function App(){
               avatarStyle={{background:"linear-gradient(135deg,var(--purple),var(--navy))"}}
               badge={<span className="badge badge-purple" style={{fontSize:"0.6rem"}}>Secretary</span>}/>
           ))}
+        </div>
+
+        {/* ── BACKUP ── */}
+        <p className="section-label">💾 Data Backup</p>
+        <div className="card" style={{border:"1.5px solid var(--gold)",background:"#FFFDF5"}}>
+          <div style={{fontFamily:"Playfair Display,serif",fontWeight:700,fontSize:"0.92rem",color:"var(--navy)",marginBottom:6}}>Export Full Backup</div>
+          <div style={{fontSize:"0.78rem",color:"var(--muted)",marginBottom:12,lineHeight:1.5}}>
+            Downloads all attendance records, daily reports, members and users as a JSON file. Keep it somewhere safe in case of data loss.
+          </div>
+          <button className="btn btn-primary btn-full" onClick={()=>{
+            const backup={
+              exportedAt:new Date().toISOString(),
+              church:"COP - Christ Temple Assembly",
+              attendance,dailyReports,submittedAtt,members,groups,users:users.map(u=>({...u,pin:"[protected]"}))
+            };
+            const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement("a");
+            a.href=url;
+            a.download=`christ-temple-backup-${todayStr()}.json`;
+            a.click();
+            showAlert("Backup downloaded successfully! ✓");
+          }}>⬇️ Download Backup</button>
         </div>
 
         {/* ── DANGER ZONE ── */}

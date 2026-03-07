@@ -34,7 +34,7 @@ function useLocalStorage(key, initialValue) {
     });
   }, [key]);
 
-  return [storedValue, setValue];
+  return [storedValue, setValue, loaded];
 }
 
 // ─── REAL QR CODE using qrcode-generator ─────────────────────────
@@ -666,6 +666,155 @@ function PrintableReport({date, groups, members, attendance, report, onClose}){
   );
 }
 
+// ─── SECRETARY REPORT FORM (standalone — keeps keyboard alive) ────
+// Must be defined OUTSIDE App() so React doesn't remount it on every render
+function SecReportForm({date,rpt,groups,members,isPresent,getGroupStats,saveReport,setModal,showAlert,SERVICE_TYPES,SERVICE_ICONS,CATEGORIES,CAT_ICONS}){
+  const [draft,setDraft]=useState(()=>({...rpt}));
+
+  // Sync draft when date changes OR when rpt loads from Firebase
+  useEffect(()=>{
+    setDraft(prev=>{
+      // Only update fields that haven't been locally modified
+      // (i.e. if Firebase loaded fresh data, adopt it)
+      return{...rpt,...prev,
+        // Always take Firebase values for these since user isn't typing them
+        serviceType:rpt.serviceType||prev.serviceType||"Sunday Morning",
+      };
+    });
+  },[date]);
+
+  // When Firebase data arrives (e.g. after page load), sync if draft still empty
+  useEffect(()=>{
+    setDraft(prev=>{
+      const anyFilled=Object.values(prev).some(v=>v&&v!=="0"&&v!=="Sunday Morning");
+      if(!anyFilled) return{...rpt};
+      return prev;
+    });
+  },[rpt.offertory,rpt.tithe,rpt.visitors,rpt.soulsWon,rpt.holySpirit,rpt.bibleStudy,rpt.activities,rpt.notes]);
+
+  const upd=(field,val)=>setDraft(p=>({...p,[field]:val}));
+  const commit=(field)=>saveReport(date,field,draft[field]);
+  const saveAll=()=>{
+    Object.entries(draft).forEach(([field,val])=>saveReport(date,field,val));
+    showAlert("Daily report saved! ✓");
+  };
+
+  const total={
+    total:members.length,
+    present:members.filter(m=>isPresent(date,m.id)).length,
+  };
+  total.absent=total.total-total.present;
+  total.pct=total.total?Math.round(total.present/total.total*100):0;
+
+  return(
+    <div className="scroll-area">
+      {/* Service Type */}
+      <div style={{margin:"6px 12px"}}>
+        <div style={{fontSize:"0.68rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:5}}>⛪ Service Type</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {SERVICE_TYPES.map(st=>{const sel=(draft.serviceType||"Sunday Morning")===st;return(
+            <button key={st} onClick={()=>{upd("serviceType",st);saveReport(date,"serviceType",st);}}
+              style={{padding:"6px 14px",borderRadius:20,border:`1.5px solid ${sel?"var(--navy)":"var(--cream-dark)"}`,background:sel?"var(--navy)":"white",color:sel?"white":"var(--muted)",fontWeight:700,fontSize:"0.75rem",cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+              {SERVICE_ICONS[st]} {st}
+            </button>
+          );})}
+        </div>
+      </div>
+      {/* Summary */}
+      <div className="summary-banner">
+        <h3>📊 Attendance Summary</h3>
+        <div className="summary-grid">
+          {[{l:"Enrolled",v:total.total},{l:"Present",v:total.present},{l:"Rate",v:total.pct+"%"}].map(s=>(
+            <div className="summary-cell" key={s.l}><div className="summary-num">{s.v}</div><div className="summary-lbl">{s.l}</div></div>
+          ))}
+        </div>
+      </div>
+      {/* Financial */}
+      <div className="card">
+        <div className="card-title">💰 Financial Records</div>
+        {[{label:"Offertory (GHS)",icon:"🪙",field:"offertory",ph:"0.00"},{label:"Tithe (GHS)",icon:"💵",field:"tithe",ph:"0.00"}].map(({label,icon,field,ph})=>(
+          <div className="report-field" key={field}>
+            <label>{icon} {label}</label>
+            <input className="input" type="text" inputMode="decimal" placeholder={ph}
+              value={draft[field]??""}
+              onChange={e=>upd(field,e.target.value)}
+              onBlur={()=>commit(field)}/>
+          </div>
+        ))}
+      </div>
+      {/* Spiritual */}
+      <div className="card">
+        <div className="card-title">🌱 Spiritual Records</div>
+        {[
+          {label:"Visitors",icon:"🙋",field:"visitors"},
+          {label:"Souls Won",icon:"✨",field:"soulsWon"},
+          {label:"Holy Spirit Baptism",icon:"🕊️",field:"holySpirit"},
+          {label:"Bible Study Attendance",icon:"📖",field:"bibleStudy"},
+        ].map(({label,icon,field})=>(
+          <div className="report-field" key={field}>
+            <label>{icon} {label}</label>
+            <input className="input" type="text" inputMode="numeric" placeholder="0"
+              value={draft[field]??""}
+              onChange={e=>upd(field,e.target.value)}
+              onBlur={()=>commit(field)}/>
+          </div>
+        ))}
+      </div>
+      {/* Activities & Notes */}
+      <div className="card">
+        <div className="card-title">📌 Activities & Notes</div>
+        <div className="report-field">
+          <label>🗓️ Activities Held</label>
+          <input className="input" type="text" placeholder="e.g. Youth Meeting, Prayer Session"
+            value={draft.activities??""}
+            onChange={e=>upd("activities",e.target.value)}
+            onBlur={()=>commit("activities")}/>
+        </div>
+        <div className="report-field">
+          <label>📝 Secretary Notes</label>
+          <textarea className="input" rows={3} placeholder="Any additional observations..."
+            value={draft.notes??""}
+            onChange={e=>upd("notes",e.target.value)}
+            onBlur={()=>commit("notes")}
+            style={{resize:"vertical"}}/>
+        </div>
+      </div>
+      {/* Breakdown */}
+      <p className="section-label">🔢 Attendance Breakdown</p>
+      <div className="demo-grid">
+        {CATEGORIES.map(cat=>{
+          const cm=members.filter(m=>m.category===cat);
+          const pres=cm.filter(m=>isPresent(date,m.id)).length;
+          const pct=cm.length?Math.round(pres/cm.length*100):0;
+          if(cm.length===0)return null;
+          return(
+            <div className="demo-box" key={cat}>
+              <div className="demo-label">{CAT_ICONS[cat]} {cat}</div>
+              <div className="demo-val">{pres}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{cm.length}</span></div>
+              <div style={{margin:"4px 0 2px"}} className="progress-bar"><div className="progress-fill" style={{width:pct+"%"}}/></div>
+              <div className="demo-sub">{cm.length-pres} absent · {pct}%</div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="section-label">By Group — <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,fontSize:"0.72rem"}}>tap to see present & absent</span></p>
+      {groups.map(g=>{
+        const st=getGroupStats(g.id,date);
+        const gm=members.filter(m=>m.groupId===g.id);
+        const presentList=gm.filter(m=>isPresent(date,m.id));
+        const absentList=gm.filter(m=>!isPresent(date,m.id));
+        const cig={};CATEGORIES.forEach(cat=>{const cm=gm.filter(m=>m.category===cat);cig[cat]={total:cm.length,present:cm.filter(m=>isPresent(date,m.id)).length};});
+        return(<BdGroup key={g.id} g={g} st={st} gm={gm} presentList={presentList} absentList={absentList} cig={cig}/>);
+      })}
+      {/* Save / Print */}
+      <div style={{margin:"8px 12px",display:"flex",gap:8}}>
+        <button className="btn btn-teal" style={{flex:1}} onClick={saveAll}>💾 Save</button>
+        <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date})}>🖨️ Print / PDF</button>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  MAIN APP
 // ═══════════════════════════════════════════════════════════════════
@@ -674,8 +823,8 @@ export default function App(){
   const [groups,       setGroups]       = useLocalStorage("church_groups",       initGroups);
   const [members,      setMembers]      = useLocalStorage("church_members",      initMembers);
   const [users,        setUsers]        = useLocalStorage("church_users",        initUsers);
-  const [attendance,   setAttendance]   = useLocalStorage("church_attendance",   {});
-  const [dailyReports, setDailyReports] = useLocalStorage("church_dailyreports", {});
+  const [attendance,   setAttendance,   attLoaded]  = useLocalStorage("church_attendance",   {});
+  const [dailyReports, setDailyReports, rptLoaded]  = useLocalStorage("church_dailyreports", {});
   const [submittedAtt, setSubmittedAtt] = useLocalStorage("church_submittedAtt", {}); // {groupId_date: true}
 
   // ── SESSION STATE (per-device, survives refresh but not shared) ─
@@ -708,6 +857,7 @@ export default function App(){
 
   // ── SEED SAMPLE HISTORICAL DATA (for demo charts) ─────────────
   useEffect(()=>{
+    if(!attLoaded||!rptLoaded) return; // wait for Firebase to load first
     const hasData=Object.keys(attendance).length>0||Object.keys(dailyReports).length>0;
     if(hasData) return; // don't overwrite real data
     const today=new Date();
@@ -736,7 +886,7 @@ export default function App(){
     }
     setAttendance(sampleAtt);
     setDailyReports(sampleRpts);
-  },[]);
+  },[attLoaded,rptLoaded]);
 
 
 
@@ -1221,112 +1371,26 @@ export default function App(){
       );
     }
 
-    // ── SECRETARY: editable view + breakdown ────────────────────
-    // Local draft state — prevents keyboard from dismissing on each keystroke
-    // Only saves to Firebase on blur (when field loses focus) or Save button
-    const [draft,setDraft]=useState(()=>({...rpt}));
-    // Keep draft in sync when date changes
-    useEffect(()=>{setDraft({...rpt});},[selectedDate]);
-    const updateDraft=(field,val)=>setDraft(p=>({...p,[field]:val}));
-    const commitField=(field)=>saveReport(selectedDate,field,draft[field]);
-    const saveAll=()=>{
-      Object.keys(draft).forEach(field=>saveReport(selectedDate,field,draft[field]));
-      showAlert("Daily report saved! ✓");
-    };
-
-    const Field=({label,icon,field,type="text",placeholder="0"})=>(
-      <div className="report-field">
-        <label>{icon} {label}</label>
-        <input className="input" type={type} placeholder={placeholder}
-          inputMode={type==="number"?"numeric":"text"}
-          value={draft[field]??""} 
-          onChange={e=>updateDraft(field,e.target.value)}
-          onBlur={()=>commitField(field)}/>
-      </div>
-    );
+    // ── SECRETARY: delegate to standalone component (keeps keyboard alive) ──
     return(
-      <div className="scroll-area">
+      <>
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
-        <div style={{margin:"6px 12px"}}>
-          <div style={{fontSize:"0.68rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:5}}>⛪ Service Type</div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {SERVICE_TYPES.map(st=>{const sel=(draft.serviceType||"Sunday Morning")===st;return(
-              <button key={st} onClick={()=>{updateDraft("serviceType",st);saveReport(selectedDate,"serviceType",st);}}
-                style={{padding:"6px 14px",borderRadius:20,border:`1.5px solid ${sel?"var(--navy)":"var(--cream-dark)"}`,background:sel?"var(--navy)":"white",color:sel?"white":"var(--muted)",fontWeight:700,fontSize:"0.75rem",cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
-                {SERVICE_ICONS[st]} {st}
-              </button>
-            );})}
-          </div>
-        </div>
-        <div className="summary-banner">
-          <h3>📊 Attendance Summary</h3>
-          <div className="summary-grid">
-            {[{l:"Enrolled",v:total.total},{l:"Present",v:total.present},{l:"Rate",v:total.pct+"%"}].map(s=>(
-              <div className="summary-cell" key={s.l}><div className="summary-num">{s.v}</div><div className="summary-lbl">{s.l}</div></div>
-            ))}
-          </div>
-        </div>
-        <div className="card">
-          <div className="card-title">💰 Financial Records</div>
-          <Field label="Offertory (GHS)" icon="🪙" field="offertory" type="text" placeholder="0.00"/>
-          <Field label="Tithe (GHS)"     icon="💵" field="tithe"     type="text" placeholder="0.00"/>
-        </div>
-        <div className="card">
-          <div className="card-title">🌱 Spiritual Records</div>
-          <Field label="Visitors"               icon="🙋" field="visitors"   type="number"/>
-          <Field label="Souls Won"              icon="✨" field="soulsWon"   type="number"/>
-          <Field label="Holy Spirit Baptism"    icon="🕊️" field="holySpirit" type="number"/>
-          <Field label="Bible Study Attendance" icon="📖" field="bibleStudy" type="number"/>
-        </div>
-        <div className="card">
-          <div className="card-title">📌 Activities & Notes</div>
-          <div className="report-field">
-            <label>🗓️ Activities Held</label>
-            <input className="input" type="text" placeholder="e.g. Youth Meeting, Prayer Session"
-              value={draft.activities??""} 
-              onChange={e=>updateDraft("activities",e.target.value)}
-              onBlur={()=>commitField("activities")}/>
-          </div>
-          <div className="report-field">
-            <label>📝 Secretary Notes</label>
-            <textarea className="input" rows={3} placeholder="Any additional observations..."
-              value={draft.notes??""} 
-              onChange={e=>updateDraft("notes",e.target.value)}
-              onBlur={()=>commitField("notes")}
-              style={{resize:"vertical"}}/>
-          </div>
-        </div>
-        <p className="section-label">🔢 Attendance Breakdown</p>
-        <div className="demo-grid">
-          {CATEGORIES.map(cat=>{
-            const cm=members.filter(m=>m.category===cat);
-            const pres=cm.filter(m=>isPresent(selectedDate,m.id)).length;
-            const pct=cm.length?Math.round(pres/cm.length*100):0;
-            if(cm.length===0)return null;
-            return(
-              <div className="demo-box" key={cat}>
-                <div className="demo-label">{CAT_ICONS[cat]} {cat}</div>
-                <div className="demo-val">{pres}<span style={{fontSize:"0.75rem",color:"var(--muted)",fontFamily:"Lato,sans-serif"}}>/{cm.length}</span></div>
-                <div style={{margin:"4px 0 2px"}} className="progress-bar"><div className="progress-fill" style={{width:pct+"%"}}/></div>
-                <div className="demo-sub">{cm.length-pres} absent · {pct}%</div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="section-label">By Group — <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,fontSize:"0.72rem"}}>tap to see present & absent</span></p>
-        {groups.map(g=>{
-          const st=getGroupStats(g.id,selectedDate);
-          const gm=members.filter(m=>m.groupId===g.id);
-          const presentList=gm.filter(m=>isPresent(selectedDate,m.id));
-          const absentList=gm.filter(m=>!isPresent(selectedDate,m.id));
-          const cig={};CATEGORIES.forEach(cat=>{const cm=gm.filter(m=>m.category===cat);cig[cat]={total:cm.length,present:cm.filter(m=>isPresent(selectedDate,m.id)).length};});
-          return(<BdGroup key={g.id} g={g} st={st} gm={gm} presentList={presentList} absentList={absentList} cig={cig}/>);
-        })}
-        <div style={{margin:"8px 12px",display:"flex",gap:8}}>
-          <button className="btn btn-teal" style={{flex:1}} onClick={saveAll}>💾 Save</button>
-          <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / PDF</button>
-        </div>
-      </div>
+        <SecReportForm
+          date={selectedDate}
+          rpt={rpt}
+          groups={groups}
+          members={members}
+          isPresent={isPresent}
+          getGroupStats={getGroupStats}
+          saveReport={saveReport}
+          setModal={setModal}
+          showAlert={showAlert}
+          SERVICE_TYPES={SERVICE_TYPES}
+          SERVICE_ICONS={SERVICE_ICONS}
+          CATEGORIES={CATEGORIES}
+          CAT_ICONS={CAT_ICONS}
+        />
+      </>
     );
   };
 

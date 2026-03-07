@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { saveData, loadData, listenData, deleteData } from "./firebase";
+import { saveData, loadData, listenData, deleteData, authReady } from "./firebase";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
 // ─── FIREBASE REAL-TIME STORAGE HOOK ─────────────────────────────
@@ -1127,6 +1127,14 @@ function SecReportForm({date,rpt,groups,members,isPresent,getGroupStats,saveRepo
 // ═══════════════════════════════════════════════════════════════════
 export default function App(){
   // ── PERSISTENT STATE (survives page refresh via localStorage) ───
+  // ── FIREBASE AUTH STATE ────────────────────────────────────
+  const [firebaseAuthed, setFirebaseAuthed] = useState(false);
+  useEffect(()=>{
+    authReady.then(user=>{
+      setFirebaseAuthed(!!user);
+    });
+  },[]);
+
   const [groups,       setGroups,       grpLoaded]  = useLocalStorage("church_groups",       initGroups);
   const [members,      setMembers,      memLoaded]  = useLocalStorage("church_members",      initMembers);
   const [users,        setUsers,        usrLoaded]  = useLocalStorage("church_users",        initUsers);
@@ -1134,7 +1142,7 @@ export default function App(){
   const [dailyReports, setDailyReports, rptLoaded]  = useLocalStorage("church_dailyreports", {});
   const [submittedAtt, setSubmittedAtt, subLoaded]  = useLocalStorage("church_submittedAtt", {});
   const [auditLog,     setAuditLog]                  = useLocalStorage("church_auditlog",     []);
-  const appReady = grpLoaded && memLoaded && usrLoaded && attLoaded && rptLoaded && subLoaded; // {groupId_date: true}
+  const appReady = firebaseAuthed && grpLoaded && memLoaded && usrLoaded && attLoaded && rptLoaded && subLoaded; // {groupId_date: true}
 
   // ── SESSION STATE (per-device, survives refresh but not shared) ─
   // VULN-03 FIX: Load from sessionStorage but verify against Firebase users
@@ -1336,7 +1344,7 @@ export default function App(){
           <div style={{textAlign:"center",padding:24}}>
             <div style={{fontSize:"3.5rem",marginBottom:16,animation:"pulse 1.5s infinite"}}>⛪</div>
             <h2 style={{color:"var(--gold-light)",fontFamily:"Playfair Display,serif",marginBottom:8}}>COP - Christ Temple Assembly</h2>
-            <p style={{color:"rgba(255,255,255,0.6)",fontSize:"0.85rem",marginBottom:24}}>Loading church data...</p>
+            <p style={{color:"rgba(255,255,255,0.6)",fontSize:"0.85rem",marginBottom:24}}>{firebaseAuthed?"Loading church data...":"Securing connection..."}</p>
             <div style={{display:"flex",gap:8,justifyContent:"center"}}>
               {[0,1,2].map(i=>(
                 <div key={i} style={{width:10,height:10,borderRadius:"50%",background:"var(--gold)",
@@ -3234,7 +3242,7 @@ export default function App(){
               </div>
               <div style={{fontFamily:"Playfair Display,serif",fontSize:"0.92rem",fontWeight:700,color:"white",lineHeight:1.2}}>{currentUser.name}</div>
               <div style={{fontSize:"0.62rem",color:"var(--gold)",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:3,fontWeight:700}}>{roleLabel}</div>
-              <div style={{fontSize:"0.55rem",color:"rgba(255,255,255,0.35)",marginTop:4}}>🔥 Live synced</div>
+              <div style={{fontSize:"0.55rem",color:"rgba(255,255,255,0.35)",marginTop:4}}>🔥 Live · 🔒 Secured</div>
             </div>
             {navSections.map(section=>(
               <div key={section.label}>

@@ -214,7 +214,7 @@ const STYLE = `
   /* ── MOBILE LAYOUT (default) ─────────────────────────────────── */
   .app{max-width:100%;min-height:100vh;display:flex;flex-direction:column;}
   .app-body{display:flex;flex-direction:column;flex:1;}
-  .main-content{flex:1;min-width:0;}
+  .main-content{flex:1;min-width:0;display:flex;flex-direction:column;}
 
   /* Mobile: top header */
   .header{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-mid) 100%);color:white;
@@ -234,7 +234,7 @@ const STYLE = `
   .nav button.active{color:var(--gold-light);border-bottom:2px solid var(--gold);margin-bottom:-2px;}
   .nav-sidebar{display:none;}
 
-  .scroll-area{overflow-y:auto;max-height:calc(100vh - 115px);padding-bottom:24px;}
+  .scroll-area{overflow-y:auto;max-height:calc(100vh - 115px);min-height:calc(100vh - 115px);padding-bottom:24px;}
 
   /* ── DESKTOP LAYOUT (768px+) ─────────────────────────────────── */
   @media(min-width:768px){
@@ -281,7 +281,7 @@ const STYLE = `
     .main-content{margin-left:var(--sidebar-w);margin-top:60px;flex:1;min-width:0;}
 
     /* Wider, grid-based layouts on desktop */
-    .scroll-area{max-height:calc(100vh - 60px);overflow-y:auto;padding-bottom:32px;}
+    .scroll-area{max-height:calc(100vh - 60px);min-height:calc(100vh - 60px);overflow-y:auto;padding-bottom:32px;}
     .card{margin:12px 20px;padding:20px;border-radius:14px;}
     .card-title{font-size:1.05rem;margin-bottom:14px;padding-bottom:10px;}
     .stats-row{margin:12px 20px;gap:12px;}

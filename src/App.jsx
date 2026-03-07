@@ -708,7 +708,7 @@ export default function App(){
 
   // ── SEED SAMPLE HISTORICAL DATA (for demo charts) ─────────────
   useEffect(()=>{
-    const hasData=Object.keys(attendance).length>0;
+    const hasData=Object.keys(attendance).length>0||Object.keys(dailyReports).length>0;
     if(hasData) return; // don't overwrite real data
     const today=new Date();
     const sampleAtt={};
@@ -1222,11 +1222,26 @@ export default function App(){
     }
 
     // ── SECRETARY: editable view + breakdown ────────────────────
-    const Field=({label,icon,field,type="number",placeholder="0"})=>(
+    // Local draft state — prevents keyboard from dismissing on each keystroke
+    // Only saves to Firebase on blur (when field loses focus) or Save button
+    const [draft,setDraft]=useState(()=>({...rpt}));
+    // Keep draft in sync when date changes
+    useEffect(()=>{setDraft({...rpt});},[selectedDate]);
+    const updateDraft=(field,val)=>setDraft(p=>({...p,[field]:val}));
+    const commitField=(field)=>saveReport(selectedDate,field,draft[field]);
+    const saveAll=()=>{
+      Object.keys(draft).forEach(field=>saveReport(selectedDate,field,draft[field]));
+      showAlert("Daily report saved! ✓");
+    };
+
+    const Field=({label,icon,field,type="text",placeholder="0"})=>(
       <div className="report-field">
         <label>{icon} {label}</label>
         <input className="input" type={type} placeholder={placeholder}
-          value={rpt[field]} onChange={e=>saveReport(selectedDate,field,e.target.value)}/>
+          inputMode={type==="number"?"numeric":"text"}
+          value={draft[field]??""} 
+          onChange={e=>updateDraft(field,e.target.value)}
+          onBlur={()=>commitField(field)}/>
       </div>
     );
     return(
@@ -1235,8 +1250,8 @@ export default function App(){
         <div style={{margin:"6px 12px"}}>
           <div style={{fontSize:"0.68rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:5}}>⛪ Service Type</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {SERVICE_TYPES.map(st=>{const sel=(rpt.serviceType||"Sunday Morning")===st;return(
-              <button key={st} onClick={()=>saveReport(selectedDate,"serviceType",st)}
+            {SERVICE_TYPES.map(st=>{const sel=(draft.serviceType||"Sunday Morning")===st;return(
+              <button key={st} onClick={()=>{updateDraft("serviceType",st);saveReport(selectedDate,"serviceType",st);}}
                 style={{padding:"6px 14px",borderRadius:20,border:`1.5px solid ${sel?"var(--navy)":"var(--cream-dark)"}`,background:sel?"var(--navy)":"white",color:sel?"white":"var(--muted)",fontWeight:700,fontSize:"0.75rem",cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
                 {SERVICE_ICONS[st]} {st}
               </button>
@@ -1258,22 +1273,27 @@ export default function App(){
         </div>
         <div className="card">
           <div className="card-title">🌱 Spiritual Records</div>
-          <Field label="Visitors"               icon="🙋" field="visitors"/>
-          <Field label="Souls Won"              icon="✨" field="soulsWon"/>
-          <Field label="Holy Spirit Baptism"    icon="🕊️" field="holySpirit"/>
-          <Field label="Bible Study Attendance" icon="📖" field="bibleStudy"/>
+          <Field label="Visitors"               icon="🙋" field="visitors"   type="number"/>
+          <Field label="Souls Won"              icon="✨" field="soulsWon"   type="number"/>
+          <Field label="Holy Spirit Baptism"    icon="🕊️" field="holySpirit" type="number"/>
+          <Field label="Bible Study Attendance" icon="📖" field="bibleStudy" type="number"/>
         </div>
         <div className="card">
           <div className="card-title">📌 Activities & Notes</div>
           <div className="report-field">
             <label>🗓️ Activities Held</label>
             <input className="input" type="text" placeholder="e.g. Youth Meeting, Prayer Session"
-              value={rpt.activities} onChange={e=>saveReport(selectedDate,"activities",e.target.value)}/>
+              value={draft.activities??""} 
+              onChange={e=>updateDraft("activities",e.target.value)}
+              onBlur={()=>commitField("activities")}/>
           </div>
           <div className="report-field">
             <label>📝 Secretary Notes</label>
             <textarea className="input" rows={3} placeholder="Any additional observations..."
-              value={rpt.notes} onChange={e=>saveReport(selectedDate,"notes",e.target.value)} style={{resize:"vertical"}}/>
+              value={draft.notes??""} 
+              onChange={e=>updateDraft("notes",e.target.value)}
+              onBlur={()=>commitField("notes")}
+              style={{resize:"vertical"}}/>
           </div>
         </div>
         <p className="section-label">🔢 Attendance Breakdown</p>
@@ -1303,7 +1323,7 @@ export default function App(){
           return(<BdGroup key={g.id} g={g} st={st} gm={gm} presentList={presentList} absentList={absentList} cig={cig}/>);
         })}
         <div style={{margin:"8px 12px",display:"flex",gap:8}}>
-          <button className="btn btn-teal" style={{flex:1}} onClick={()=>showAlert("Daily report saved! ✓")}>💾 Save</button>
+          <button className="btn btn-teal" style={{flex:1}} onClick={saveAll}>💾 Save</button>
           <button className="btn btn-primary" style={{flex:1}} onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / PDF</button>
         </div>
       </div>

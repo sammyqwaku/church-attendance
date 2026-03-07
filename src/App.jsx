@@ -971,6 +971,7 @@ export default function App(){
   // ════════════════ DASHBOARD (admin + leader) ══════════════════
   const DashboardTab=()=>{
     const total=getTotalStats(selectedDate);
+    const [expandedGroup,setExpandedGroup]=useState(null);
     return(
       <div className="scroll-area">
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
@@ -980,21 +981,84 @@ export default function App(){
           <div className="stat-box"><div className="stat-num" style={{color:"var(--red)"}}>{total.absent}</div><div className="stat-label">Absent</div></div>
           <div className="stat-box"><div className="stat-num" style={{color:"var(--gold)"}}>{total.pct}%</div><div className="stat-label">Rate</div></div>
         </div>
-        <p className="section-label">Group Stats</p>
+        <p className="section-label">Group Details {isAdmin&&<span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}> — tap a group to see members</span>}</p>
         {groups.map(g=>{
           const st=getGroupStats(g.id,selectedDate);
+          const gm=members.filter(m=>m.groupId===g.id);
+          const presentMembers=gm.filter(m=>isPresent(selectedDate,m.id));
+          const absentMembers=gm.filter(m=>!isPresent(selectedDate,m.id));
+          const isOpen=expandedGroup===g.id;
           return(
-            <div className="card" key={g.id} style={{padding:"11px 14px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
-                <div style={{width:10,height:10,borderRadius:"50%",background:g.color}}/>
-                <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1}}>{g.name}</span>
-                <span style={{fontWeight:700,fontSize:"0.82rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
-                <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
+            <div className="card" key={g.id} style={{padding:0,overflow:"hidden"}}>
+              {/* Group header — clickable for pastor */}
+              <div style={{padding:"12px 14px",cursor:isAdmin?"pointer":"default",background:g.color+"10"}}
+                onClick={()=>isAdmin&&setExpandedGroup(isOpen?null:g.id)}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+                  <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1,fontSize:"0.95rem"}}>{g.name}</span>
+                  <span style={{fontWeight:700,fontSize:"0.82rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
+                  <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
+                  {isAdmin&&<span style={{color:"var(--muted)",fontSize:"0.85rem",marginLeft:2}}>{isOpen?"▲":"▼"}</span>}
+                </div>
+                <div className="progress-bar"><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
+                {!isOpen&&st.absent>0&&(
+                  <div style={{marginTop:6,fontSize:"0.7rem",color:"var(--red)"}}>
+                    ⚠ Absent: {absentMembers.map(m=>m.name.replace(/^(Elder|Deacon|Deaconess)\s+/i,"").split(" ")[0]).join(", ")}
+                  </div>
+                )}
               </div>
-              <div className="progress-bar"><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
-              {st.absent>0&&<div style={{marginTop:5,fontSize:"0.7rem",color:"var(--red)"}}>
-                ⚠ Absent: {members.filter(m=>m.groupId===g.id&&!isPresent(selectedDate,m.id)).map(m=>m.name.replace(/^(Elder|Deacon|Deaconess)\s+/i,"").split(" ")[0]).join(", ")}
-              </div>}
+
+              {/* Expanded member detail — pastor only */}
+              {isOpen&&isAdmin&&(
+                <div style={{padding:"0 14px 14px",borderTop:"1px solid "+g.color+"25"}}>
+                  {/* Present members */}
+                  <div style={{marginTop:12,marginBottom:6}}>
+                    <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--green)",letterSpacing:"0.8px",textTransform:"uppercase",marginBottom:6}}>
+                      ✓ Present ({presentMembers.length})
+                    </div>
+                    {presentMembers.length===0
+                      ? <div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>No one marked present</div>
+                      : presentMembers.map(m=>(
+                        <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                          <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${g.color},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.72rem",flexShrink:0}}>{initials(m.name)}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:"0.84rem",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+                            <div style={{display:"flex",gap:4,marginTop:1}}>
+                              <span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                              {m.phone&&<span style={{fontSize:"0.62rem",color:"var(--muted)"}}>📞 {m.phone}</span>}
+                            </div>
+                          </div>
+                          <span className="badge badge-green" style={{fontSize:"0.65rem",flexShrink:0}}>✓ Present</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+
+                  {/* Absent members */}
+                  <div style={{marginTop:10}}>
+                    <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--red)",letterSpacing:"0.8px",textTransform:"uppercase",marginBottom:6}}>
+                      ✗ Absent ({absentMembers.length})
+                    </div>
+                    {absentMembers.length===0
+                      ? <div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>No one is absent 🎉</div>
+                      : absentMembers.map(m=>(
+                        <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                          <div style={{width:30,height:30,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.72rem",flexShrink:0}}>{initials(m.name)}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:"0.84rem",color:"var(--muted)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+                            <div style={{display:"flex",gap:4,marginTop:1,flexWrap:"wrap"}}>
+                              <span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
+                              {m.phone&&<span style={{fontSize:"0.62rem",color:"var(--muted)"}}>📞 {m.phone}</span>}
+                              {m.residence&&<span style={{fontSize:"0.62rem",color:"var(--muted)"}}>📍 {m.residence}</span>}
+                            </div>
+                          </div>
+                          <span className="badge badge-red" style={{fontSize:"0.65rem",flexShrink:0}}>✗ Absent</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1069,6 +1133,72 @@ export default function App(){
   const SecReportTab=()=>{
     const rpt=getReport(selectedDate);
     const total=getTotalStats(selectedDate);
+
+    // Pastor sees read-only view; Secretary can edit
+    if(isAdmin){
+      const ReadField=({label,icon,field,prefix=""})=>{
+        const val=rpt[field];
+        if(!val||val==="0")return null;
+        return(
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+            <span style={{fontSize:"0.82rem",color:"var(--muted)"}}>{icon} {label}</span>
+            <span style={{fontWeight:700,fontSize:"0.88rem",color:"var(--navy)"}}>{prefix}{val}</span>
+          </div>
+        );
+      };
+      const hasFinancials=rpt.offertory||rpt.tithe;
+      const hasSpiritual=rpt.visitors!=="0"||rpt.soulsWon!=="0"||rpt.holySpirit!=="0"||rpt.bibleStudy!=="0";
+      return(
+        <div className="scroll-area">
+          <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+          <div style={{margin:"6px 12px",background:"#EEF6FF",border:"1.5px solid #2980B9",borderRadius:8,padding:"8px 12px",fontSize:"0.75rem",color:"#1A5276",display:"flex",alignItems:"center",gap:6}}>
+            👁️ <span>You are viewing this report in <strong>read-only</strong> mode. Only the Secretary can edit.</span>
+          </div>
+          <div className="summary-banner">
+            <h3>📊 Attendance Summary — {formatDate(selectedDate)}</h3>
+            <div className="summary-grid">
+              {[{l:"Enrolled",v:total.total},{l:"Present",v:total.present},{l:"Rate",v:total.pct+"%"}].map(s=>(
+                <div className="summary-cell" key={s.l}><div className="summary-num">{s.v}</div><div className="summary-lbl">{s.l}</div></div>
+              ))}
+            </div>
+          </div>
+          {hasFinancials&&(
+            <div className="card">
+              <div className="card-title">💰 Financial Records</div>
+              <ReadField label="Offertory" icon="🪙" field="offertory" prefix="GHS "/>
+              <ReadField label="Tithe" icon="💵" field="tithe" prefix="GHS "/>
+            </div>
+          )}
+          {hasSpiritual&&(
+            <div className="card">
+              <div className="card-title">🌱 Spiritual Records</div>
+              <ReadField label="Visitors"            icon="🙋" field="visitors"/>
+              <ReadField label="Souls Won"           icon="✨" field="soulsWon"/>
+              <ReadField label="Holy Spirit Baptism" icon="🕊️" field="holySpirit"/>
+              <ReadField label="Bible Study"         icon="📖" field="bibleStudy"/>
+            </div>
+          )}
+          {(rpt.activities||rpt.notes)&&(
+            <div className="card">
+              <div className="card-title">📌 Activities & Notes</div>
+              {rpt.activities&&<div style={{marginBottom:8}}><div style={{fontSize:"0.72rem",color:"var(--muted)",marginBottom:3}}>🗓️ Activities Held</div><div style={{fontSize:"0.85rem"}}>{rpt.activities}</div></div>}
+              {rpt.notes&&<div><div style={{fontSize:"0.72rem",color:"var(--muted)",marginBottom:3}}>📝 Secretary Notes</div><div style={{fontSize:"0.85rem"}}>{rpt.notes}</div></div>}
+            </div>
+          )}
+          {!hasFinancials&&!hasSpiritual&&!rpt.activities&&!rpt.notes&&(
+            <div className="card" style={{textAlign:"center",padding:"30px 20px"}}>
+              <div style={{fontSize:"2rem",marginBottom:8}}>📋</div>
+              <div style={{color:"var(--muted)",fontSize:"0.85rem"}}>No report data entered for this date yet.</div>
+            </div>
+          )}
+          <div style={{margin:"0 12px"}}>
+            <button className="btn btn-primary btn-full" onClick={()=>setModal({type:"printReport",date:selectedDate})}>🖨️ Print / Save as PDF</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Secretary: editable version
     const Field=({label,icon,field,type="number",placeholder="0"})=>(
       <div className="report-field">
         <label>{icon} {label}</label>
@@ -1240,15 +1370,23 @@ export default function App(){
     const [addName,setAddName]=useState("");
     const [addGid,setAddGid]=useState(groups[0]?.id||"");
     const [addCat,setAddCat]=useState("Male");
+    const [addPhone,setAddPhone]=useState("");
+    const [addResidence,setAddResidence]=useState("");
     const [addGroupName,setAddGroupName]=useState("");
     const [addMode,setAddMode]=useState(null);
+    const [editMember,setEditMember]=useState(null);
 
     const filtered=members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase())&&(fg==="all"||m.groupId===fg)&&(fc==="all"||m.category===fc));
 
     const saveMember=()=>{
       if(!addName.trim())return;
-      setMembers(p=>[...p,{id:"m"+Date.now(),name:addName.trim(),groupId:addGid,category:addCat}]);
-      showAlert(`${addName} added!`);setAddName("");setAddMode(null);
+      setMembers(p=>[...p,{id:"m"+Date.now(),name:addName.trim(),groupId:addGid,category:addCat,phone:addPhone.trim(),residence:addResidence.trim()}]);
+      showAlert(`${addName} added!`);setAddName("");setAddPhone("");setAddResidence("");setAddMode(null);
+    };
+    const saveEditMember=()=>{
+      if(!editMember.name.trim())return;
+      setMembers(p=>p.map(m=>m.id===editMember.id?{...m,...editMember}:m));
+      showAlert("Member updated!");setEditMember(null);
     };
     const saveGroup=()=>{
       if(!addGroupName.trim())return;
@@ -1279,16 +1417,40 @@ export default function App(){
         {addMode==="member"&&(
           <div className="card" style={{background:"#FEF9EF",border:"1.5px solid var(--gold)"}}>
             <div className="card-title">➕ Add New Member</div>
-            <input className="input" placeholder="Full Name" value={addName} onChange={e=>setAddName(e.target.value)}/>
+            <input className="input" placeholder="Full Name *" value={addName} onChange={e=>setAddName(e.target.value)}/>
             <select className="select" value={addGid} onChange={e=>setAddGid(e.target.value)}>
               {groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
             <select className="select" value={addCat} onChange={e=>setAddCat(e.target.value)}>
               {CATEGORIES.map(c=><option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}
             </select>
+            <input className="input" placeholder="📞 Phone Number (optional)" value={addPhone} onChange={e=>setAddPhone(e.target.value)}/>
+            <input className="input" placeholder="📍 Residence / Area (optional)" value={addResidence} onChange={e=>setAddResidence(e.target.value)}/>
             <div style={{display:"flex",gap:8}}>
               <button className="btn btn-primary" style={{flex:1}} onClick={saveMember}>Add Member</button>
               <button className="btn btn-outline" style={{flex:1}} onClick={()=>setAddMode(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Edit member modal */}
+        {editMember&&(
+          <div className="modal-overlay" onClick={()=>setEditMember(null)}>
+            <div className="modal" onClick={e=>e.stopPropagation()}>
+              <div className="modal-title">✏️ Edit Member <span style={{cursor:"pointer"}} onClick={()=>setEditMember(null)}>✕</span></div>
+              <input className="input" placeholder="Full Name" value={editMember.name} onChange={e=>setEditMember(p=>({...p,name:e.target.value}))}/>
+              <select className="select" value={editMember.groupId} onChange={e=>setEditMember(p=>({...p,groupId:e.target.value}))}>
+                {groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <select className="select" value={editMember.category} onChange={e=>setEditMember(p=>({...p,category:e.target.value}))}>
+                {CATEGORIES.map(c=><option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}
+              </select>
+              <input className="input" placeholder="📞 Phone Number" value={editMember.phone||""} onChange={e=>setEditMember(p=>({...p,phone:e.target.value}))}/>
+              <input className="input" placeholder="📍 Residence / Area" value={editMember.residence||""} onChange={e=>setEditMember(p=>({...p,residence:e.target.value}))}/>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn btn-outline" style={{flex:1}} onClick={()=>setEditMember(null)}>Cancel</button>
+                <button className="btn btn-primary" style={{flex:1}} onClick={saveEditMember}>Save Changes</button>
+              </div>
             </div>
           </div>
         )}
@@ -1310,17 +1472,26 @@ export default function App(){
           {filtered.map(m=>{
             const grp=groups.find(g=>g.id===m.groupId);
             return(
-              <div className="member-row" key={m.id}>
+              <div className="member-row" key={m.id} style={{flexWrap:"wrap"}}>
                 <div className="avatar" style={{background:`linear-gradient(135deg,${grp?.color||"#888"},var(--navy))`}}>{initials(m.name)}</div>
                 <div className="member-info">
                   <div className="member-name">{m.name}</div>
-                  <div style={{display:"flex",gap:4,marginTop:2}}>
+                  <div style={{display:"flex",gap:4,marginTop:2,flexWrap:"wrap"}}>
                     <span className="badge badge-blue" style={{fontSize:"0.6rem"}}>{grp?.name}</span>
                     <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>{CAT_ICONS[m.category]} {m.category}</span>
                   </div>
+                  {(m.phone||m.residence)&&(
+                    <div style={{marginTop:3,fontSize:"0.65rem",color:"var(--muted)",display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {m.phone&&<span>📞 {m.phone}</span>}
+                      {m.residence&&<span>📍 {m.residence}</span>}
+                    </div>
+                  )}
                 </div>
-                <button className="btn btn-outline btn-sm" style={{marginRight:4}} onClick={()=>setModal({type:"qr",member:m})}>QR</button>
-                <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteMember(m.id)}>✕</button>
+                <div style={{display:"flex",gap:4,flexShrink:0}}>
+                  <button className="btn btn-outline btn-sm" onClick={()=>setModal({type:"qr",member:m})}>QR</button>
+                  <button className="btn btn-sm" style={{background:"#EEF2FF",color:"var(--navy)",border:"1px solid #C5CAE9"}} onClick={()=>setEditMember({...m})}>✏️</button>
+                  <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteMember(m.id)}>✕</button>
+                </div>
               </div>
             );
           })}
@@ -1751,6 +1922,7 @@ export default function App(){
               <div style={{fontSize:"0.82rem",fontWeight:700,color:"white"}}>{currentUser.name}</div>
               <div style={{fontSize:"0.62rem",color:"rgba(255,255,255,0.5)"}}>🔥 Live sync</div>
             </div>
+            <button className="btn btn-sm" style={{background:"rgba(255,255,255,0.1)",color:"white",fontSize:"0.68rem",border:"1px solid rgba(255,255,255,0.15)",marginRight:4}} onClick={()=>window.location.reload()} title="Refresh">🔄</button>
             <button className="btn btn-sm" style={{background:"rgba(255,255,255,0.15)",color:"white",fontSize:"0.68rem",border:"1px solid rgba(255,255,255,0.2)"}} onClick={()=>setCurrentUser(null)}>Sign Out</button>
           </div>
         </div>

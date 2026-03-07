@@ -666,6 +666,65 @@ function PrintableReport({date, groups, members, attendance, report, onClose}){
   );
 }
 
+// ─── BREAKDOWN GROUP CARD (standalone — used by SecReportForm) ───
+function BdGroup({g,st,gm,presentList,absentList,cig}){
+  const [open,setOpen]=useState(false);
+  return(
+    <div className="card" style={{padding:0,overflow:"hidden",border:open?`2px solid ${g.color}`:undefined}}>
+      <div style={{padding:"11px 14px",cursor:"pointer",background:g.color+"14"}} onClick={()=>setOpen(o=>!o)}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+          <div style={{width:10,height:10,borderRadius:"50%",background:g.color,flexShrink:0}}/>
+          <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1,fontSize:"0.92rem"}}>{g.name}</span>
+          <span style={{fontWeight:700,fontSize:"0.82rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
+          <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
+          <span style={{color:"var(--muted)",fontSize:"0.85rem",marginLeft:2}}>{open?"▲":"▼"}</span>
+        </div>
+        <div className="progress-bar"><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
+        {!open&&absentList.length>0&&<div style={{marginTop:5,fontSize:"0.7rem",color:"var(--red)"}}>⚠ Absent: {absentList.map(m=>m.name.split(" ")[0]).join(", ")}</div>}
+      </div>
+      {open&&(
+        <div style={{padding:"0 14px 12px",borderTop:`1px solid ${g.color}22`}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,margin:"10px 0 8px"}}>
+            {CATEGORIES.map(cat=>{const ci=cig[cat];if(!ci||ci.total===0)return null;return(
+              <div key={cat} style={{background:"var(--cream)",borderRadius:7,padding:"6px 5px",textAlign:"center"}}>
+                <div style={{fontSize:"0.95rem"}}>{CAT_ICONS[cat]}</div>
+                <div style={{fontSize:"0.72rem",fontWeight:700,color:"var(--navy)"}}>{ci.present}/{ci.total}</div>
+                <div style={{fontSize:"0.58rem",color:"var(--muted)"}}>{cat}</div>
+              </div>
+            );})}
+          </div>
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--green)",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>✓ Present ({presentList.length})</div>
+            {presentList.length===0
+              ?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>None yet</div>
+              :presentList.map(m=>(
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                  <div style={{width:28,height:28,borderRadius:"50%",background:`linear-gradient(135deg,${g.color},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.65rem",flexShrink:0}}>{initials(m.name)}</div>
+                  <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem"}}>{m.name}</div><span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{CAT_ICONS[m.category]} {m.category}</span></div>
+                  <span className="badge badge-green" style={{fontSize:"0.62rem"}}>✓</span>
+                </div>
+              ))
+            }
+          </div>
+          <div>
+            <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--red)",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>✗ Absent ({absentList.length})</div>
+            {absentList.length===0
+              ?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>🎉 No absences!</div>
+              :absentList.map(m=>(
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
+                  <div style={{width:28,height:28,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.65rem",flexShrink:0}}>{initials(m.name)}</div>
+                  <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem",color:"var(--muted)"}}>{m.name}</div>{m.phone&&<div style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</div>}</div>
+                  <span className="badge badge-red" style={{fontSize:"0.62rem"}}>✗</span>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── SECRETARY REPORT FORM (standalone — keeps keyboard alive) ────
 // Must be defined OUTSIDE App() so React doesn't remount it on every render
 function SecReportForm({date,rpt,groups,members,isPresent,getGroupStats,saveReport,setModal,showAlert,SERVICE_TYPES,SERVICE_ICONS,CATEGORIES,CAT_ICONS}){
@@ -1220,63 +1279,6 @@ export default function App(){
             </div>
           );
         })}
-      </div>
-    );
-  };
-
-  // ── Breakdown group card (collapsible) ──────────────────────
-  const BdGroup=({g,st,gm,presentList,absentList,cig})=>{
-    const [open,setOpen]=useState(false);
-    return(
-      <div className="card" style={{padding:0,overflow:"hidden",border:open?`2px solid ${g.color}`:undefined}}>
-        <div style={{padding:"11px 14px",cursor:"pointer",background:g.color+"14"}} onClick={()=>setOpen(o=>!o)}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-            <div style={{width:10,height:10,borderRadius:"50%",background:g.color,flexShrink:0}}/>
-            <span style={{fontFamily:"Playfair Display,serif",fontWeight:700,flex:1,fontSize:"0.92rem"}}>{g.name}</span>
-            <span style={{fontWeight:700,fontSize:"0.82rem",color:"var(--navy)"}}>{st.present}/{st.total}</span>
-            <span className={`badge ${st.pct>=70?"badge-green":st.pct>=40?"badge-gold":"badge-red"}`}>{st.pct}%</span>
-            <span style={{color:"var(--muted)",fontSize:"0.85rem",marginLeft:2}}>{open?"▲":"▼"}</span>
-          </div>
-          <div className="progress-bar"><div className="progress-fill" style={{width:st.pct+"%",background:`linear-gradient(90deg,${g.color},${g.color}99)`}}/></div>
-          {!open&&absentList.length>0&&<div style={{marginTop:5,fontSize:"0.7rem",color:"var(--red)"}}>⚠ Absent: {absentList.map(m=>m.name.split(" ")[0]).join(", ")}</div>}
-        </div>
-        {open&&(
-          <div style={{padding:"0 14px 12px",borderTop:`1px solid ${g.color}22`}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,margin:"10px 0 8px"}}>
-              {CATEGORIES.map(cat=>{const ci=cig[cat];if(!ci||ci.total===0)return null;return(
-                <div key={cat} style={{background:"var(--cream)",borderRadius:7,padding:"6px 5px",textAlign:"center"}}>
-                  <div style={{fontSize:"0.95rem"}}>{CAT_ICONS[cat]}</div>
-                  <div style={{fontSize:"0.72rem",fontWeight:700,color:"var(--navy)"}}>{ci.present}/{ci.total}</div>
-                  <div style={{fontSize:"0.58rem",color:"var(--muted)"}}>{cat}</div>
-                </div>
-              );})}
-            </div>
-            <div style={{marginBottom:8}}>
-              <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--green)",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>✓ Present ({presentList.length})</div>
-              {presentList.length===0?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>None yet</div>
-                :presentList.map(m=>(
-                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
-                    <div style={{width:28,height:28,borderRadius:"50%",background:`linear-gradient(135deg,${g.color},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.65rem",flexShrink:0}}>{initials(m.name)}</div>
-                    <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem"}}>{m.name}</div><span className="badge badge-gray" style={{fontSize:"0.58rem"}}>{CAT_ICONS[m.category]} {m.category}</span></div>
-                    <span className="badge badge-green" style={{fontSize:"0.62rem"}}>✓</span>
-                  </div>
-                ))
-              }
-            </div>
-            <div>
-              <div style={{fontSize:"0.68rem",fontWeight:700,color:"var(--red)",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>✗ Absent ({absentList.length})</div>
-              {absentList.length===0?<div style={{fontSize:"0.78rem",color:"var(--muted)",fontStyle:"italic"}}>🎉 No absences!</div>
-                :absentList.map(m=>(
-                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 0",borderBottom:"1px solid var(--cream-dark)"}}>
-                    <div style={{width:28,height:28,borderRadius:"50%",background:"#ccc",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.65rem",flexShrink:0}}>{initials(m.name)}</div>
-                    <div style={{flex:1}}><div style={{fontWeight:700,fontSize:"0.82rem",color:"var(--muted)"}}>{m.name}</div>{m.phone&&<div style={{fontSize:"0.6rem",color:"var(--muted)"}}>📞 {m.phone}</div>}</div>
-                    <span className="badge badge-red" style={{fontSize:"0.62rem"}}>✗</span>
-                  </div>
-                ))
-              }
-            </div>
-          </div>
-        )}
       </div>
     );
   };

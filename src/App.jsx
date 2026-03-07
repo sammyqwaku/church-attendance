@@ -1521,7 +1521,7 @@ export default function App(){
     ?[{id:"dashboard",label:"📊 Dash"+(todayNewSubs>0?` 🔴${todayNewSubs}`:"")},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"},{id:"users",label:"👤 Users"},{id:"qrcodes",label:"📱 QR Codes"}]
     :isSecretary
     ?[{id:"sec-totals",label:"📊 Totals"},{id:"charts",label:"📈 Trends"},{id:"sec-report",label:"📝 Daily Rpt"},{id:"month",label:"📅 Month"},{id:"history",label:"🗂 History"},{id:"members",label:"👥 Members"}]
-    :[{id:"attendance",label:"✅ Mark"},{id:"grp-members",label:"👥 My Group"},{id:"month",label:"📅 Month"},{id:"grp-history",label:"🗂 History"}];
+    :[{id:"attendance",label:"✅ Mark"},{id:"call-list",label:"📞 Calls"},{id:"grp-members",label:"👥 My Group"},{id:"month",label:"📅 Month"},{id:"grp-history",label:"🗂 History"}];
 
   // ════════════════ ATTENDANCE TAB (leader only) ════════════════
   const AttendanceTab=()=>{
@@ -1581,6 +1581,64 @@ export default function App(){
             </div>
           </div>
         )}
+
+        {/* ── ABSENT CALL LIST — shows when any member is absent ── */}
+        {(()=>{
+          const absentMembers=members
+            .filter(m=>visibleGroups.some(g=>g.id===m.groupId))
+            .filter(m=>!isPresent(selectedDate,m.id));
+          if(absentMembers.length===0) return null;
+          return(
+            <div className="card" style={{border:"1.5px solid var(--red)",background:"#FFF8F8",padding:0,overflow:"hidden"}}>
+              <div style={{background:"var(--red)",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{color:"white",fontWeight:700,fontSize:"0.88rem"}}>📞 Follow-up Call List</div>
+                <span style={{background:"rgba(255,255,255,0.25)",color:"white",borderRadius:20,padding:"2px 10px",fontSize:"0.7rem",fontWeight:700}}>{absentMembers.length} absent</span>
+              </div>
+              <div style={{padding:"8px 14px 12px"}}>
+                <div style={{fontSize:"0.72rem",color:"var(--muted)",marginBottom:10}}>
+                  Tap the call button to contact absent members directly.
+                </div>
+                {absentMembers.map(m=>{
+                  const grp=groups.find(g=>g.id===m.groupId);
+                  return(
+                    <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #FFE5E5"}}>
+                      <MemberAvatar member={m} group={grp} size={36} fontSize="0.7rem"/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:"0.85rem",color:"var(--navy)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+                        <div style={{fontSize:"0.68rem",color:"var(--muted)",display:"flex",gap:6,marginTop:1,flexWrap:"wrap"}}>
+                          <span>{CAT_ICONS[m.category]} {m.category}</span>
+                          {m.residence&&<span>📍 {m.residence}</span>}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexShrink:0}}>
+                        {m.phone
+                          ?<div style={{display:"flex",gap:5,flexShrink:0}}>
+                              <a href={`tel:${m.phone}`}
+                                style={{display:"flex",alignItems:"center",gap:4,background:"var(--green)",color:"white",
+                                  borderRadius:20,padding:"6px 12px",fontSize:"0.72rem",fontWeight:700,textDecoration:"none"}}>
+                                📞 Call
+                              </a>
+                              <a href={`https://wa.me/${m.phone.replace(/[^0-9]/g,"")}`} target="_blank" rel="noreferrer"
+                                style={{display:"flex",alignItems:"center",gap:4,background:"#25D366",color:"white",
+                                  borderRadius:20,padding:"6px 12px",fontSize:"0.72rem",fontWeight:700,textDecoration:"none"}}>
+                                💬 WA
+                              </a>
+                            </div>
+                          :<span style={{fontSize:"0.68rem",color:"var(--muted)",fontStyle:"italic",padding:"6px 8px",background:"#F0F0F0",borderRadius:16}}>No number</span>
+                        }
+                      </div>
+                    </div>
+                  );
+                })}
+                {absentMembers.filter(m=>!m.phone).length>0&&(
+                  <div style={{marginTop:8,padding:"8px 10px",background:"#FFF0F0",borderRadius:8,fontSize:"0.7rem",color:"var(--red)"}}>
+                    ⚠️ {absentMembers.filter(m=>!m.phone).length} absent member{absentMembers.filter(m=>!m.phone).length>1?"s have":" has"} no phone number recorded. Ask Pastor to update their profile.
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {visibleGroups.map(group=>{
           const stats=getGroupStats(group.id,selectedDate);
@@ -1659,6 +1717,133 @@ export default function App(){
     );
   };
 
+
+  // ════════════════ CALL LIST TAB (leader) ═════════════════════
+  const CallListTab=()=>{
+    const [filter,setFilter]=useState("absent"); // absent | all
+    const myGrpMembers=members.filter(m=>visibleGroups.some(g=>g.id===m.groupId));
+    const absentToday=myGrpMembers.filter(m=>!isPresent(selectedDate,m.id));
+    const displayList=filter==="absent"?absentToday:myGrpMembers;
+    const noPhone=displayList.filter(m=>!m.phone);
+
+    return(
+      <div className="scroll-area">
+        <ProfileBanner/>
+        <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+
+        {/* Filter toggle */}
+        <div style={{display:"flex",gap:8,margin:"8px 12px"}}>
+          {[["absent",`📞 Absent (${absentToday.length})`],["all",`👥 All Members (${myGrpMembers.length})`]].map(([key,label])=>(
+            <button key={key} onClick={()=>setFilter(key)}
+              style={{flex:1,padding:"8px 10px",borderRadius:20,border:`2px solid ${filter===key?"var(--red)":"var(--cream-dark)"}`,
+                background:filter===key?"var(--red)":"white",color:filter===key?"white":"var(--muted)",
+                fontWeight:700,fontSize:"0.75rem",cursor:"pointer"}}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Summary card */}
+        <div className="card" style={{background:"linear-gradient(135deg,var(--navy),#243260)",padding:"14px 16px",marginBottom:4}}>
+          <div style={{display:"flex",justifyContent:"space-around",textAlign:"center"}}>
+            <div>
+              <div style={{color:"var(--gold)",fontSize:"1.6rem",fontWeight:700}}>{myGrpMembers.length}</div>
+              <div style={{color:"rgba(255,255,255,0.6)",fontSize:"0.65rem"}}>TOTAL</div>
+            </div>
+            <div>
+              <div style={{color:"#2ECC71",fontSize:"1.6rem",fontWeight:700}}>{myGrpMembers.length-absentToday.length}</div>
+              <div style={{color:"rgba(255,255,255,0.6)",fontSize:"0.65rem"}}>PRESENT</div>
+            </div>
+            <div>
+              <div style={{color:"#E74C3C",fontSize:"1.6rem",fontWeight:700}}>{absentToday.length}</div>
+              <div style={{color:"rgba(255,255,255,0.6)",fontSize:"0.65rem"}}>ABSENT</div>
+            </div>
+            <div>
+              <div style={{color:"#F39C12",fontSize:"1.6rem",fontWeight:700}}>{noPhone.length}</div>
+              <div style={{color:"rgba(255,255,255,0.6)",fontSize:"0.65rem"}}>NO NUMBER</div>
+            </div>
+          </div>
+          <div style={{textAlign:"center",marginTop:8,color:"rgba(255,255,255,0.45)",fontSize:"0.65rem"}}>
+            {formatDate(selectedDate)}
+          </div>
+        </div>
+
+        {displayList.length===0?(
+          <div className="card" style={{textAlign:"center",padding:32}}>
+            <div style={{fontSize:"2.5rem",marginBottom:8}}>{filter==="absent"?"🎉":"👥"}</div>
+            <div style={{fontFamily:"Playfair Display,serif",color:"var(--navy)",fontWeight:700,marginBottom:4}}>
+              {filter==="absent"?"All members present!":"No members found"}
+            </div>
+            <div style={{fontSize:"0.78rem",color:"var(--muted)"}}>
+              {filter==="absent"?"Everyone attended today's service. Praise God! 🙌":"Add members in the My Group tab."}
+            </div>
+          </div>
+        ):(
+          <div className="card" style={{padding:0,overflow:"hidden"}}>
+            <div style={{padding:"10px 14px",background:filter==="absent"?"#FFF0F0":"#F0F4FF",borderBottom:`2px solid ${filter==="absent"?"var(--red)":"var(--navy)"}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{fontWeight:700,fontSize:"0.85rem",color:filter==="absent"?"var(--red)":"var(--navy)"}}>
+                {filter==="absent"?"📞 Members to Follow Up":"👥 Full Member List"}
+              </div>
+              <span style={{fontSize:"0.7rem",color:"var(--muted)"}}>{displayList.length} member{displayList.length!==1?"s":""}</span>
+            </div>
+            {displayList.map((m,idx)=>{
+              const grp=groups.find(g=>g.id===m.groupId);
+              const present=isPresent(selectedDate,m.id);
+              return(
+                <div key={m.id} style={{
+                  display:"flex",alignItems:"center",gap:10,padding:"10px 14px",
+                  borderBottom:idx<displayList.length-1?"1px solid var(--cream-dark)":"none",
+                  background:filter==="all"?(present?"#F0FFF4":"#FFF8F8"):"white"
+                }}>
+                  <MemberAvatar member={m} group={grp} size={40} fontSize="0.75rem"/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:"0.85rem",color:"var(--navy)",
+                      whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+                    <div style={{fontSize:"0.67rem",color:"var(--muted)",marginTop:2,display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <span>{CAT_ICONS[m.category]||"👤"} {m.category||"Member"}</span>
+                      {m.residence&&<span>📍 {m.residence}</span>}
+                      {filter==="all"&&<span className={`badge ${present?"badge-green":"badge-red"}`} style={{fontSize:"0.58rem",padding:"1px 6px"}}>
+                        {present?"✓ Present":"✗ Absent"}
+                      </span>}
+                    </div>
+                  </div>
+                  {m.phone
+                    ?<div style={{display:"flex",gap:5,flexShrink:0}}>
+                        <a href={`tel:${m.phone}`}
+                          style={{display:"flex",alignItems:"center",gap:4,background:"var(--green)",
+                            color:"white",borderRadius:20,padding:"7px 12px",
+                            fontSize:"0.72rem",fontWeight:700,textDecoration:"none"}}>
+                          📞 Call
+                        </a>
+                        <a href={`https://wa.me/${m.phone.replace(/[^0-9]/g,"")}`} target="_blank" rel="noreferrer"
+                          style={{display:"flex",alignItems:"center",gap:4,background:"#25D366",
+                            color:"white",borderRadius:20,padding:"7px 12px",
+                            fontSize:"0.72rem",fontWeight:700,textDecoration:"none"}}>
+                          💬 WA
+                        </a>
+                      </div>
+                    :<span style={{fontSize:"0.65rem",color:"var(--muted)",fontStyle:"italic",
+                        padding:"7px 10px",background:"#F0F0F0",borderRadius:16,flexShrink:0}}>
+                        No number
+                      </span>
+                  }
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Warning about missing numbers */}
+        {noPhone.length>0&&filter==="absent"&&(
+          <div style={{margin:"0 12px 12px",padding:"10px 12px",background:"#FFF3CD",borderRadius:10,
+            border:"1px solid #FFD700",fontSize:"0.72rem",color:"#856404"}}>
+            ⚠️ <strong>{noPhone.length} absent member{noPhone.length>1?"s have":" has"} no phone number.</strong> Ask the Pastor to update their profile so you can reach them.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ════════════════ DASHBOARD (admin + leader) ══════════════════
   // ── PROFILE BANNER (Secretary + Leader portals) ─────────────
   const ProfileBanner=()=>{
@@ -1695,6 +1880,36 @@ export default function App(){
     );
   };
 
+
+
+
+  // ── Birthday helpers ────────────────────────────────────────
+  const getBirthdayAlerts=()=>{
+    const today=new Date();
+    const todayM=today.getMonth();
+    const todayD=today.getDate();
+    const alerts=[];
+    members.forEach(m=>{
+      if(!m.dob) return;
+      const bd=new Date(m.dob);
+      const monthDiff=bd.getMonth()-todayM;
+      const dayDiff=bd.getDate()-todayD;
+      const daysUntil=monthDiff*30+dayDiff;
+      const grp=groups.find(g=>g.id===m.groupId);
+      if(bd.getMonth()===todayM&&bd.getDate()===todayD){
+        alerts.push({member:m,group:grp,type:"today",days:0,age:today.getFullYear()-bd.getFullYear()});
+      } else {
+        // Check within next 7 days
+        const thisYearBd=new Date(today.getFullYear(),bd.getMonth(),bd.getDate());
+        const diff=Math.ceil((thisYearBd-today)/(1000*60*60*24));
+        if(diff>0&&diff<=7){
+          alerts.push({member:m,group:grp,type:"soon",days:diff,age:today.getFullYear()-bd.getFullYear()});
+        }
+      }
+    });
+    return alerts.sort((a,b)=>a.days-b.days);
+  };
+
   const DashboardTab=()=>{
     const total=getTotalStats(selectedDate);
     const todaySubs=Object.values(submittedAtt).filter(s=>s.date===todayStr());
@@ -1702,6 +1917,43 @@ export default function App(){
     return(
       <div className="scroll-area">
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
+
+        {/* ── Birthday Alerts ── */}
+        {(()=>{
+          const alerts=getBirthdayAlerts();
+          if(alerts.length===0) return null;
+          return(
+            <div className="card" style={{border:"2px solid var(--gold)",background:"linear-gradient(135deg,#FEF9EF,#FFFDF5)",padding:0,overflow:"hidden",margin:"0 0 4px"}}>
+              <div style={{background:"linear-gradient(90deg,var(--gold),var(--gold-light))",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{color:"white",fontWeight:700,fontSize:"0.88rem"}}>🎂 Birthday Alerts</div>
+                <span style={{background:"rgba(255,255,255,0.3)",color:"white",borderRadius:20,padding:"2px 10px",fontSize:"0.7rem",fontWeight:700}}>{alerts.length}</span>
+              </div>
+              <div style={{padding:"8px 14px 12px"}}>
+                {alerts.map(({member:m,group:grp,type,days,age})=>(
+                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #F5E9C8"}}>
+                    <MemberAvatar member={m} group={grp} size={40} fontSize="0.72rem"/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:"0.85rem",color:"var(--navy)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+                      <div style={{fontSize:"0.7rem",color:"var(--muted)"}}>{grp?.name} · Turning {age}</div>
+                    </div>
+                    <div style={{textAlign:"center",flexShrink:0}}>
+                      {type==="today"
+                        ?<span style={{background:"var(--gold)",color:"white",borderRadius:20,padding:"4px 12px",fontSize:"0.72rem",fontWeight:700}}>🎉 Today!</span>
+                        :<span style={{background:"#FEF3CD",color:"#856404",borderRadius:20,padding:"4px 10px",fontSize:"0.7rem",fontWeight:700}}>In {days}d</span>
+                      }
+                    </div>
+                    {m.phone&&<div style={{display:"flex",gap:5,flexShrink:0}}>
+                      <a href={`tel:${m.phone}`} style={{background:"var(--navy)",color:"white",borderRadius:20,padding:"6px 10px",fontSize:"0.7rem",fontWeight:700,textDecoration:"none"}}>📞</a>
+                      <a href={`https://wa.me/${m.phone.replace(/[^0-9]/g,"")}`} target="_blank" rel="noreferrer"
+                        style={{background:"#25D366",color:"white",borderRadius:20,padding:"6px 10px",fontSize:"0.7rem",fontWeight:700,textDecoration:"none"}}>💬</a>
+                    </div>}
+                  </div>
+                ))}
+                <div style={{fontSize:"0.68rem",color:"var(--muted)",marginTop:6,textAlign:"center"}}>Birthdays today and within next 7 days</div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Submission Notifications Panel ── */}
         {todaySubs.length>0&&(
@@ -2078,6 +2330,7 @@ export default function App(){
     const [aPhone,setAPhone]=useState("");
     const [aRes,setARes]=useState("");
     const [aOcc,setAOcc]=useState("");
+    const [aDob,setADob]=useState("");
     const [addGroupName,setAddGroupName]=useState("");
     const [aPhoto,setAPhoto]=useState(null);
     const [photoLoading,setPhotoLoading]=useState(false);
@@ -2103,8 +2356,8 @@ export default function App(){
 
     const saveMember=()=>{
       if(!aName.trim()){showAlert("Full name required","error");return;}
-      setMembers(p=>[...p,{id:"m"+Date.now(),name:aName.trim(),groupId:aGid,category:aCat,gender:aGender,phone:aPhone.trim(),residence:aRes.trim(),occupation:aOcc.trim(),photo:aPhoto||null}]);
-      showAlert(`${aName} added!`);setAName("");setAPhone("");setARes("");setAOcc("");setAPhoto(null);setAddMode(null);
+      setMembers(p=>[...p,{id:"m"+Date.now(),name:aName.trim(),groupId:aGid,category:aCat,gender:aGender,phone:aPhone.trim(),residence:aRes.trim(),occupation:aOcc.trim(),dob:aDob||"",photo:aPhoto||null}]);
+      showAlert(`${aName} added!`);setAName("");setAPhone("");setARes("");setAOcc("");setADob("");setAPhoto(null);setAddMode(null);
     };
     const saveGroup=()=>{
       if(!addGroupName.trim())return;
@@ -2132,6 +2385,7 @@ export default function App(){
             {icon:"📞",label:"Telephone",val:viewM.phone},
             {icon:"📍",label:"Residence",val:viewM.residence},
             {icon:"💼",label:"Occupation",val:viewM.occupation},
+            {icon:"🎂",label:"Date of Birth",val:viewM.dob?new Date(viewM.dob).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"}):""},
           ].filter(f=>f.val&&String(f.val).trim());
           return(
             <div className="modal-overlay" onClick={()=>setViewM(null)}>
@@ -2182,6 +2436,10 @@ export default function App(){
               <input className="input" placeholder="📞 Telephone" value={editM.phone||""} onChange={e=>setEditM(p=>({...p,phone:e.target.value}))}/>
               <input className="input" placeholder="📍 Residence" value={editM.residence||""} onChange={e=>setEditM(p=>({...p,residence:e.target.value}))}/>
               <input className="input" placeholder="💼 Occupation" value={editM.occupation||""} onChange={e=>setEditM(p=>({...p,occupation:e.target.value}))}/>
+              <div style={{marginBottom:4}}>
+                <div style={{fontSize:"0.72rem",color:"var(--muted)",fontWeight:700,marginBottom:4}}>🎂 Date of Birth (optional)</div>
+                <input className="input" type="date" value={editM.dob||""} onChange={e=>setEditM(p=>({...p,dob:e.target.value}))} style={{marginBottom:0}}/>
+              </div>
               {/* Photo upload in edit */}
               <div style={{marginTop:4}}>
                 <div style={{fontSize:"0.72rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>📸 Member Photo</div>
@@ -2248,6 +2506,10 @@ export default function App(){
             <input className="input" placeholder="📞 Telephone" value={aPhone} onChange={e=>setAPhone(e.target.value)}/>
             <input className="input" placeholder="📍 Residence" value={aRes} onChange={e=>setARes(e.target.value)}/>
             <input className="input" placeholder="💼 Occupation" value={aOcc} onChange={e=>setAOcc(e.target.value)}/>
+            <div style={{marginBottom:4}}>
+              <div style={{fontSize:"0.72rem",color:"var(--muted)",fontWeight:700,marginBottom:4}}>🎂 Date of Birth (optional)</div>
+              <input className="input" type="date" value={aDob} onChange={e=>setADob(e.target.value)} style={{marginBottom:0}}/>
+            </div>
             {/* Photo upload */}
             <div style={{marginTop:4}}>
               <div style={{fontSize:"0.72rem",color:"var(--muted)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:6}}>📸 Member Photo (optional)</div>
@@ -3245,7 +3507,7 @@ export default function App(){
         { label: "Members",    items: tabs.filter(t=>["members"].includes(t.id)) },
       ]
     : [
-        { label: "My Group",   items: tabs.filter(t=>["attendance","grp-members","month","grp-history"].includes(t.id)) },
+        { label: "My Group",   items: tabs.filter(t=>["attendance","call-list","grp-members","month","grp-history"].includes(t.id)) },
       ];
 
   return(
@@ -3333,6 +3595,8 @@ export default function App(){
             {alert&&<div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
 
             {activeTab==="attendance"  && isLeader      && <AttendanceTab/>}
+        {activeTab==="call-list"  && isLeader      && <CallListTab/>}
+        
             {activeTab==="dashboard"   && isAdmin       && <DashboardTab/>}
             {activeTab==="sec-totals"  && isSecretary   && <SecTotalsTab/>}
             {activeTab==="sec-report"  && (isAdmin||isSecretary) && <SecReportTab/>}

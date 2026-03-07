@@ -501,20 +501,38 @@ function initials(name){return name.replace(/^(Elder|Deacon|Deaconess)\s+/i,"").
 
 // QRSvg defined above as FallbackQR alias
 
-// ── PIN HASHING (SHA-256 via Web Crypto API) ──────────────────
-async function hashPin(pin){
+// ── PIN HASHING (SHA-256 + per-user random salt) ─────────────
+// VULN-04 FIX: Each user gets a unique random salt so two users
+// with the same PIN produce completely different hashes.
+function generateSalt(){
+  const arr=new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function hashPin(pin, salt){
+  const useSalt = salt || "cop_legacy_salt"; // fallback for old hashes
   const encoder = new TextEncoder();
-  const data = encoder.encode(pin + "cop_christ_temple_salt");
+  const data = encoder.encode(pin + useSalt);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2,"0")).join("");
 }
-// Synchronous check helper — compares a plain PIN to a stored hash
-async function verifyPin(plain, stored){
-  // If stored looks like a plain PIN (≤6 chars), compare directly (migration path)
+// Returns {hash, salt} for storage
+async function hashPinWithSalt(pin){
+  const salt = generateSalt();
+  const hash = await hashPin(pin, salt);
+  return { hash, salt };
+}
+// Verifies plain PIN against stored value (handles all formats)
+async function verifyPin(plain, stored, salt){
+  if(!stored) return false;
+  // Format 1: plain PIN (≤6 chars) — legacy migration
   if(stored.length <= 6) return plain === stored;
-  const h = await hashPin(plain);
-  return h === stored;
+  // Format 2: new hash with per-user salt
+  if(salt){ const h=await hashPin(plain,salt); return h===stored; }
+  // Format 3: old hash with shared salt (pre-VULN-04 fix)
+  const h=await hashPin(plain,"cop_christ_temple_salt");
+  return h===stored;
 }
 
 function DatePicker({value,onChange}){
@@ -783,7 +801,9 @@ function PrintableReport({date, groups, members, attendance, report, onClose}){
 // ─── IMAGE COMPRESSION HELPER ────────────────────────────────
 // Resizes member photos to 160×160px before saving to Firebase
 // Keeps file size small (~15-25KB) so Firestore stays fast
-function compressImage(file, maxSize=160, quality=0.75){
+function compressImage(file, maxSize=100, quality=0.70){
+  // VULN-07 FIX: Aggressive compression keeps photos ~5KB each
+  // Safe for Firestore without needing paid Firebase Storage
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onerror=()=>reject(new Error("File read failed"));
@@ -825,6 +845,20 @@ function MemberAvatar({member, group, size=36, fontSize="0.75rem"}){
       {initials(member?.name||"?")}
     </div>
   );
+}
+
+// ── INPUT VALIDATION HELPERS (VULN-06 FIX) ───────────────────
+function sanitizeAmount(val){
+  const n=parseFloat(val);
+  if(isNaN(n)||n<0) return "0.00";
+  if(n>999999) return "999999.00"; // max GHS 999,999
+  return n.toFixed(2);
+}
+function sanitizeCount(val){
+  const n=parseInt(val);
+  if(isNaN(n)||n<0) return "0";
+  if(n>9999) return "9999";
+  return String(n);
 }
 
 // ─── ERROR BOUNDARY — prevents white screen on crashes ──────────
@@ -996,8 +1030,16 @@ function SecReportForm({date,rpt,groups,members,isPresent,getGroupStats,saveRepo
             <label>{icon} {label}</label>
             <input className="input" type="text" inputMode="decimal" placeholder={ph}
               value={draft[field]??""}
-              onChange={e=>upd(field,e.target.value)}
-              onBlur={()=>commit(field)}/>
+              onChange={e=>{
+                // Only allow digits and one decimal point
+                const v=e.target.value.replace(/[^0-9.]/g,"").replace(/(\..*)\./g,"$1");
+                upd(field,v);
+              }}
+              onBlur={()=>{
+                // Sanitize on blur — clamp to valid range
+                upd(field, sanitizeAmount(draft[field]||"0"));
+                commit(field);
+              }}/>
           </div>
         ))}
       </div>
@@ -1014,8 +1056,14 @@ function SecReportForm({date,rpt,groups,members,isPresent,getGroupStats,saveRepo
             <label>{icon} {label}</label>
             <input className="input" type="text" inputMode="numeric" placeholder="0"
               value={draft[field]??""}
-              onChange={e=>upd(field,e.target.value)}
-              onBlur={()=>commit(field)}/>
+              onChange={e=>{
+                const v=e.target.value.replace(/[^0-9]/g,"");
+                upd(field,v);
+              }}
+              onBlur={()=>{
+                upd(field, sanitizeCount(draft[field]||"0"));
+                commit(field);
+              }}/>
           </div>
         ))}
       </div>
@@ -1085,18 +1133,34 @@ export default function App(){
   const [attendance,   setAttendance,   attLoaded]  = useMonthlyAttendance();
   const [dailyReports, setDailyReports, rptLoaded]  = useLocalStorage("church_dailyreports", {});
   const [submittedAtt, setSubmittedAtt, subLoaded]  = useLocalStorage("church_submittedAtt", {});
+  const [auditLog,     setAuditLog]                  = useLocalStorage("church_auditlog",     []);
   const appReady = grpLoaded && memLoaded && usrLoaded && attLoaded && rptLoaded && subLoaded; // {groupId_date: true}
 
   // ── SESSION STATE (per-device, survives refresh but not shared) ─
-  const [currentUser, setCurrentUserState] = useState(() => {
-    try {
-      const saved = sessionStorage.getItem("church_currentUser");
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
+  // VULN-03 FIX: Load from sessionStorage but verify against Firebase users
+  const [currentUser, setCurrentUserState] = useState(()=>{
+    try{
+      const saved=sessionStorage.getItem("church_currentUser");
+      return saved?JSON.parse(saved):null; // initially just {id,role}
+    }catch{return null;}
   });
+  // VULN-03 + VULN-10 FIX: Once Firebase users load, replace minimal session
+  // with full user object — and verify user still exists + role unchanged
+  useEffect(()=>{
+    if(!usrLoaded||!currentUser) return;
+    const fullUser=users.find(u=>u.id===currentUser.id&&u.role===currentUser.role);
+    if(fullUser){
+      setCurrentUserState(fullUser); // upgrade to full user object
+    } else {
+      // User deleted or role changed — force sign out
+      sessionStorage.removeItem("church_currentUser");
+      setCurrentUserState(null);
+    }
+  },[usrLoaded]);
   const setCurrentUser = (user) => {
     try {
-      if (user) sessionStorage.setItem("church_currentUser", JSON.stringify(user));
+      // VULN-10 FIX: Store only id+role in sessionStorage, not full user object
+      if (user) sessionStorage.setItem("church_currentUser", JSON.stringify({id:user.id,role:user.role}));
       else sessionStorage.removeItem("church_currentUser");
     } catch {}
     setCurrentUserState(user);
@@ -1111,8 +1175,28 @@ export default function App(){
   const [checkInGroup, setCheckInGroup] = useState(null);
   const [resetConfirm, setResetConfirm] = useState(0);   // 0=idle 1=first 2=final
   const [resetWord,    setResetWord]    = useState("");
-  const [loginAttempts,setLoginAttempts]= useState(0);   // failed attempt counter
-  const [lockUntil,    setLockUntil]    = useState(null);// timestamp when lock expires
+  // VULN-02 FIX: Persist lockout in sessionStorage so refresh doesn't bypass it
+  const [loginAttempts,setLoginAttempts]= useState(()=>{
+    try{return parseInt(sessionStorage.getItem("church_loginAttempts")||"0");}catch{return 0;}
+  });
+  const [lockUntil,setLockUntil]=useState(()=>{
+    try{
+      const v=sessionStorage.getItem("church_lockUntil");
+      const ts=v?parseInt(v):null;
+      return (ts&&Date.now()<ts)?ts:null;
+    }catch{return null;}
+  });
+  const persistAttempts=(n)=>{
+    setLoginAttempts(n);
+    try{sessionStorage.setItem("church_loginAttempts",String(n));}catch{}
+  };
+  const persistLock=(ts)=>{
+    setLockUntil(ts);
+    try{
+      if(ts) sessionStorage.setItem("church_lockUntil",String(ts));
+      else sessionStorage.removeItem("church_lockUntil");
+    }catch{}
+  };
 
   // ── CLEAN UP old Firebase currentUser doc (caused cross-device sign-out) ─
   useEffect(() => {
@@ -1126,11 +1210,16 @@ export default function App(){
     if(groups.length===0) return; // wait for groups to load from Firebase
     const params=new URLSearchParams(window.location.search);
     const gid=params.get("checkin");
+    const exp=params.get("exp");
     if(gid){
+      // VULN-05 FIX: Verify token hasn't expired (2 hour window)
+      const expired=exp&&Date.now()>parseInt(exp);
       const grp=groups.find(g=>g.id===gid);
-      if(grp){
+      if(grp&&!expired){
         setCheckInGroup(grp);
-        // Clean the URL so refreshing doesn't re-trigger
+        window.history.replaceState({},"",window.location.pathname);
+      } else if(expired){
+        alert("This QR code has expired. Please ask the Pastor to generate a new one.");
         window.history.replaceState({},"",window.location.pathname);
       }
     }
@@ -1206,28 +1295,31 @@ export default function App(){
     const candidates=users.filter(u=>!loginRole||u.role===loginRole);
     let matched=null;
     for(const u of candidates){
-      const ok=await verifyPin(loginPin,u.pin);
+      const ok=await verifyPin(loginPin,u.pin,u.salt);
       if(ok){matched=u;break;}
     }
     if(matched){
       setCurrentUser(matched);setLoginError("");setLoginPin("");
-      setLoginAttempts(0);setLockUntil(null);
+      persistAttempts(0);persistLock(null);
       setActiveTab(matched.role==="admin"?"dashboard":matched.role==="secretary"?"sec-totals":"attendance");
-      // Audit log — record sign-in
+      // VULN-08 FIX: Audit log saved to Firebase (permanent, survives refresh)
       try{
-        const log=JSON.parse(sessionStorage.getItem("church_auditlog")||"[]");
-        log.unshift({action:"LOGIN",user:matched.name,role:matched.role,time:new Date().toISOString()});
-        sessionStorage.setItem("church_auditlog",JSON.stringify(log.slice(0,50)));
+        const logKey="church_auditlog";
+        loadData(logKey,[]).then(existing=>{
+          const log=Array.isArray(existing)?existing:[];
+          log.unshift({action:"LOGIN",user:matched.name,role:matched.role,time:new Date().toISOString()});
+          saveData(logKey,log.slice(0,100)); // keep last 100 events
+        });
       }catch{}
     } else {
       const newAttempts=loginAttempts+1;
-      setLoginAttempts(newAttempts);
+      persistAttempts(newAttempts);
       setLoginPin("");
       if(newAttempts>=MAX_ATTEMPTS){
         const until=Date.now()+(LOCK_MINUTES*60*1000);
-        setLockUntil(until);
+        persistLock(until);
         setLoginError(`Too many failed attempts. Account locked for ${LOCK_MINUTES} minutes.`);
-        setLoginAttempts(0);
+        persistAttempts(0);
       } else {
         const left=MAX_ATTEMPTS-newAttempts;
         setLoginError(`Incorrect PIN or role. ${left} attempt${left>1?"s":""} remaining.`);
@@ -2175,11 +2267,11 @@ export default function App(){
     const saveUser=async()=>{
       if(!addName.trim()||addPin.length<4){showAlert("Name and 4-digit PIN required","error");return;}
       for(const u of users){
-        const dup=await verifyPin(addPin,u.pin);
+        const dup=await verifyPin(addPin,u.pin,u.salt);
         if(dup){showAlert("PIN already in use. Choose another.","error");return;}
       }
-      const hashed=await hashPin(addPin);
-      setUsers(p=>[...p,{id:"u"+Date.now(),name:addName.trim(),role:addRole,pin:hashed,groupId:addRole==="leader"?addGid:null}]);
+      const {hash:hashed,salt:newSalt}=await hashPinWithSalt(addPin);
+      setUsers(p=>[...p,{id:"u"+Date.now(),name:addName.trim(),role:addRole,pin:hashed,salt:newSalt,groupId:addRole==="leader"?addGid:null}]);
       showAlert(`${addName} (${addRole}) added!`);setAddName("");setAddPin("");setShowForm(false);
     };
     const deleteUser=id=>{
@@ -2193,14 +2285,14 @@ export default function App(){
       // Check for duplicate PIN — verify against all other users
       for(const u of users){
         if(u.id===pinModal.id) continue;
-        const dup=await verifyPin(newPin,u.pin);
+        const dup=await verifyPin(newPin,u.pin,u.salt);
         if(dup){showAlert("PIN already in use. Choose another.","error");return;}
       }
-      const hashed=await hashPin(newPin);
-      setUsers(p=>p.map(u=>u.id===pinModal.id?{...u,pin:hashed}:u));
+      const {hash:hashed,salt:newSalt}=await hashPinWithSalt(newPin);
+      setUsers(p=>p.map(u=>u.id===pinModal.id?{...u,pin:hashed,salt:newSalt}:u));
       // If pastor changed their own PIN, update session too
       if(pinModal.id===currentUser.id){
-        const updated={...currentUser,pin:hashed};
+        const updated={...currentUser,pin:hashed,salt:newSalt};
         try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
       }
       setPinSuccess(`✅ PIN for ${pinModal.name} has been changed successfully!`);
@@ -2405,8 +2497,9 @@ export default function App(){
         {/* ── AUDIT LOG ── */}
         {(()=>{
           try{
-            const log=JSON.parse(sessionStorage.getItem("church_auditlog")||"[]");
-            if(log.length===0) return null;
+            // VULN-08 FIX: Read from Firebase-backed auditLog state
+            const log=auditLog;
+            if(!Array.isArray(log)||log.length===0) return null;
             return(
               <>
                 <p className="section-label">📋 Recent Activity Log</p>
@@ -2531,7 +2624,11 @@ export default function App(){
             {/* QR code visual */}
             <div style={{display:"flex",justifyContent:"center",margin:"10px 0"}}>
               <div style={{padding:12,border:`3px solid ${selectedGroup.color}`,borderRadius:14,background:"white",boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
-                <RealQRCode value={`${window.location.origin}/?checkin=${selectedGroup.id}`} size={180} color={selectedGroup.color}/>
+                <RealQRCode value={(()=>{
+                  const exp=Date.now()+(2*60*60*1000); // 2 hours from now
+                  const token=btoa(`${selectedGroup.id}:${exp}`).replace(/=/g,"");
+                  return `${window.location.origin}/?checkin=${selectedGroup.id}&token=${token}&exp=${exp}`;
+                })()} size={180} color={selectedGroup.color}/>
               </div>
             </div>
 

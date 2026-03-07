@@ -1398,6 +1398,41 @@ export default function App(){
   };
 
   // ════════════════ DASHBOARD (admin + leader) ══════════════════
+  // ── PROFILE BANNER (Secretary + Leader portals) ─────────────
+  const ProfileBanner=()=>{
+    if(isAdmin) return null; // Pastor has full profile in Users tab
+    return(
+      <div style={{margin:"10px 12px 0",background:"linear-gradient(135deg,var(--navy),#243260)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 4px 16px rgba(26,39,68,0.18)"}}>
+        <label style={{cursor:"pointer",position:"relative",flexShrink:0}}>
+          {currentUser.photo
+            ?<img src={currentUser.photo} alt={currentUser.name} style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:"2.5px solid var(--gold)",boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}}/>
+            :<div style={{width:52,height:52,borderRadius:"50%",background:`linear-gradient(135deg,${ROLE_COLORS[currentUser.role]||"var(--gold)"},#0A1628)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.2rem",border:"2.5px solid var(--gold)"}}>
+              {initials(currentUser.name)}
+            </div>
+          }
+          <div style={{position:"absolute",bottom:1,right:1,width:16,height:16,borderRadius:"50%",background:"var(--gold)",border:"2px solid var(--navy)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.45rem"}}>📷</div>
+          <input type="file" accept="image/*" style={{display:"none"}}
+            onChange={async e=>{
+              if(!e.target.files[0]) return;
+              try{
+                const compressed=await compressImage(e.target.files[0],120,0.8);
+                setUsers(p=>p.map(x=>x.id===currentUser.id?{...x,photo:compressed}:x));
+                const updated={...currentUser,photo:compressed};
+                try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
+                setCurrentUserState(updated);
+                showAlert("Profile photo updated! ✓");
+              }catch{showAlert("Could not process image","error");}
+            }}/>
+        </label>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"Playfair Display,serif",fontWeight:700,fontSize:"0.95rem",color:"white"}}>{currentUser.name}</div>
+          <div style={{fontSize:"0.65rem",color:"var(--gold)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",marginTop:1}}>{roleLabel}</div>
+          <div style={{fontSize:"0.6rem",color:"rgba(255,255,255,0.45)",marginTop:2}}>Tap photo to update · 🔥 Live sync</div>
+        </div>
+      </div>
+    );
+  };
+
   const DashboardTab=()=>{
     const total=getTotalStats(selectedDate);
     const todaySubs=Object.values(submittedAtt).filter(s=>s.date===todayStr());
@@ -1483,6 +1518,7 @@ export default function App(){
     const allGroupsSubmitted=groups.length>0&&groups.every(g=>!!submittedAtt[`${g.id}_${selectedDate}`]);
     return(
       <div className="scroll-area">
+        <ProfileBanner/>
         <DatePicker value={selectedDate} onChange={setSelectedDate}/>
 
         {/* Submission status banner */}
@@ -2077,19 +2113,52 @@ export default function App(){
     const secretaries=users.filter(u=>u.role==="secretary");
     const admins=users.filter(u=>u.role==="admin");
 
+    const updateUserPhoto=async(u,file)=>{
+      if(!file) return;
+      try{
+        const compressed=await compressImage(file,120,0.8);
+        setUsers(p=>p.map(x=>x.id===u.id?{...x,photo:compressed}:x));
+        if(u.id===currentUser.id){
+          const updated={...currentUser,photo:compressed};
+          try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
+          setCurrentUserState(updated);
+        }
+        showAlert(`Photo updated for ${u.name}!`);
+      }catch{showAlert("Could not process image","error");}
+    };
+    const removeUserPhoto=(u)=>{
+      setUsers(p=>p.map(x=>x.id===u.id?{...x,photo:null}:x));
+      if(u.id===currentUser.id){
+        const updated={...currentUser,photo:null};
+        try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
+        setCurrentUserState(updated);
+      }
+      showAlert(`Photo removed for ${u.name}`,"info");
+    };
+
     const UserRow=({u,avatarStyle,badge})=>(
       <div className="member-row" key={u.id} style={{flexWrap:"wrap",gap:6}}>
-        <div className="avatar" style={avatarStyle}>{initials(u.name)}</div>
+        {/* Avatar — click to upload photo */}
+        <label style={{cursor:"pointer",flexShrink:0,position:"relative"}}>
+          {u.photo
+            ?<img src={u.photo} alt={u.name} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:"2.5px solid var(--gold)",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}/>
+            :<div className="avatar" style={{...avatarStyle,width:42,height:42}}>{initials(u.name)}</div>
+          }
+          <div style={{position:"absolute",bottom:0,right:0,width:15,height:15,borderRadius:"50%",background:"var(--navy)",border:"1.5px solid white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.45rem",color:"white"}}>📷</div>
+          <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>updateUserPhoto(u,e.target.files[0])}/>
+        </label>
         <div className="member-info">
           <div className="member-name">{u.name}</div>
           <div style={{display:"flex",gap:4,marginTop:2,flexWrap:"wrap"}}>
             {badge}
-            <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>PIN: {"•".repeat(u.pin.length)}</span>
+            <span className="badge badge-gray" style={{fontSize:"0.6rem"}}>PIN: {"•".repeat(Math.min(u.pin.length,6))}</span>
           </div>
         </div>
-        <div style={{display:"flex",gap:5}}>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           <button className="btn btn-sm" style={{background:"#EEF2FF",color:"var(--navy)",border:"1px solid #C5CAE9",fontSize:"0.68rem"}}
             onClick={()=>openPinModal(u)}>🔑 PIN</button>
+          {u.photo&&<button className="btn btn-sm" style={{background:"#FFF8F0",color:"#E67E22",border:"1px solid #F5CBA7",fontSize:"0.68rem"}}
+            onClick={()=>removeUserPhoto(u)}>🗑️</button>}
           {u.id!==currentUser.id&&(
             <button className="btn btn-sm" style={{background:"#FFF0F0",color:"var(--red)",border:"1px solid #FAD7D7"}} onClick={()=>deleteUser(u.id)}>✕</button>
           )}
@@ -2190,6 +2259,49 @@ export default function App(){
               avatarStyle={{background:"linear-gradient(135deg,var(--purple),var(--navy))"}}
               badge={<span className="badge badge-purple" style={{fontSize:"0.6rem"}}>Secretary</span>}/>
           ))}
+        </div>
+
+        {/* ── MY PROFILE CARD ── */}
+        <p className="section-label">👤 My Profile</p>
+        <div className="card" style={{border:"1.5px solid var(--gold)",background:"#FFFDF5"}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <label style={{cursor:"pointer",position:"relative",flexShrink:0}}>
+              {currentUser.photo
+                ?<img src={currentUser.photo} alt={currentUser.name} style={{width:64,height:64,borderRadius:"50%",objectFit:"cover",border:"3px solid var(--gold)",boxShadow:"0 4px 16px rgba(0,0,0,0.12)"}}/>
+                :<div style={{width:64,height:64,borderRadius:"50%",background:`linear-gradient(135deg,${ROLE_COLORS[currentUser.role]||"var(--gold)"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.4rem",border:"3px solid var(--gold)"}}>
+                  {initials(currentUser.name)}
+                </div>
+              }
+              <div style={{position:"absolute",bottom:2,right:2,width:18,height:18,borderRadius:"50%",background:"var(--navy)",border:"2px solid white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"0.5rem",color:"var(--gold)"}}>📷</div>
+              <input type="file" accept="image/*" style={{display:"none"}}
+                onChange={async e=>{
+                  if(!e.target.files[0]) return;
+                  try{
+                    const compressed=await compressImage(e.target.files[0],120,0.8);
+                    setUsers(p=>p.map(x=>x.id===currentUser.id?{...x,photo:compressed}:x));
+                    const updated={...currentUser,photo:compressed};
+                    try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
+                    setCurrentUserState(updated);
+                    showAlert("Profile photo updated! ✓");
+                  }catch{showAlert("Could not process image","error");}
+                }}/>
+            </label>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"Playfair Display,serif",fontWeight:700,fontSize:"1rem",color:"var(--navy)"}}>{currentUser.name}</div>
+              <div style={{fontSize:"0.72rem",color:"var(--gold)",fontWeight:700,textTransform:"capitalize",marginTop:2}}>{currentUser.role==="admin"?"Pastor":currentUser.role}</div>
+              <div style={{fontSize:"0.68rem",color:"var(--muted)",marginTop:4}}>Tap the photo to change it. Your photo appears in the app header and sidebar.</div>
+            </div>
+          </div>
+          {currentUser.photo&&(
+            <button style={{marginTop:10,width:"100%",padding:"6px",background:"transparent",border:"1px solid var(--red)",borderRadius:8,color:"var(--red)",fontSize:"0.72rem",cursor:"pointer"}}
+              onClick={()=>{
+                setUsers(p=>p.map(x=>x.id===currentUser.id?{...x,photo:null}:x));
+                const updated={...currentUser,photo:null};
+                try{sessionStorage.setItem("church_currentUser",JSON.stringify(updated));}catch{}
+                setCurrentUserState(updated);
+                showAlert("Profile photo removed","info");
+              }}>✕ Remove profile photo</button>
+          )}
         </div>
 
         {/* ── AUDIT LOG ── */}
@@ -2875,6 +2987,7 @@ export default function App(){
 
         {/* ── TOP HEADER (visible on all screen sizes) ── */}
         <div className="header">
+          {/* Desktop: church logo left */}
           <div className="header-logo">
             <span style={{fontSize:"1.6rem"}}>⛪</span>
             <div>
@@ -2882,15 +2995,26 @@ export default function App(){
               <div className="subtitle">{roleLabel}</div>
             </div>
           </div>
-          {/* Mobile: show title inline */}
-          <div style={{display:"flex",flexDirection:"column"}} className="no-print">
-            <h1 style={{fontSize:"1rem",color:"var(--gold-light)"}}>⛪ Christ Temple</h1>
-            <div className="subtitle">{currentUser.name}</div>
+          {/* Mobile: church name */}
+          <div style={{display:"flex",flexDirection:"column",flex:1}} className="no-print">
+            <h1 style={{fontSize:"0.95rem",color:"var(--gold-light)"}}>⛪ Christ Temple</h1>
+            <div className="subtitle">{roleLabel}</div>
           </div>
+          {/* Right side: user photo + name + sign out */}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{textAlign:"right",display:"none"}} className="desktop-user">
-              <div style={{fontSize:"0.82rem",fontWeight:700,color:"white"}}>{currentUser.name}</div>
-              <div style={{fontSize:"0.62rem",color:"rgba(255,255,255,0.5)"}}>🔥 Live sync</div>
+            {/* User profile chip */}
+            <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.1)",borderRadius:24,padding:"4px 12px 4px 4px",border:"1px solid rgba(255,255,255,0.15)"}}>
+              {currentUser.photo
+                ?<img src={currentUser.photo} alt={currentUser.name}
+                    style={{width:30,height:30,borderRadius:"50%",objectFit:"cover",border:"2px solid var(--gold)",flexShrink:0}}/>
+                :<div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${ROLE_COLORS[currentUser.role]||"var(--gold)"},var(--navy))`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.7rem",flexShrink:0,border:"2px solid var(--gold)"}}>
+                  {initials(currentUser.name)}
+                </div>
+              }
+              <div>
+                <div style={{fontSize:"0.78rem",fontWeight:700,color:"white",lineHeight:1.1}}>{currentUser.name}</div>
+                <div style={{fontSize:"0.58rem",color:"rgba(255,255,255,0.55)",textTransform:"capitalize"}}>{currentUser.role==="admin"?"Pastor":currentUser.role}</div>
+              </div>
             </div>
             <button className="btn btn-sm" style={{background:"rgba(255,255,255,0.15)",color:"white",fontSize:"0.68rem",border:"1px solid rgba(255,255,255,0.2)"}} onClick={()=>setCurrentUser(null)}>Sign Out</button>
           </div>
@@ -2899,10 +3023,21 @@ export default function App(){
         <div className="app-body">
           {/* ── DESKTOP SIDEBAR ── */}
           <nav className="nav-sidebar no-print">
-            <div style={{padding:"10px 20px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
-              <div style={{fontSize:"0.68rem",color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.8px"}}>{roleLabel}</div>
-              <div style={{fontSize:"0.9rem",fontWeight:700,color:"white",marginTop:2}}>{currentUser.name}</div>
-              <div style={{fontSize:"0.58rem",color:"rgba(255,255,255,0.35)",marginTop:2}}>🔥 Live synced</div>
+            <div style={{padding:"16px 20px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8,textAlign:"center"}}>
+              {/* Large profile photo in sidebar */}
+              <div style={{position:"relative",display:"inline-block",marginBottom:10}}>
+                {currentUser.photo
+                  ?<img src={currentUser.photo} alt={currentUser.name}
+                      style={{width:64,height:64,borderRadius:"50%",objectFit:"cover",border:"3px solid var(--gold)",boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}/>
+                  :<div style={{width:64,height:64,borderRadius:"50%",background:`linear-gradient(135deg,${ROLE_COLORS[currentUser.role]||"var(--gold)"},#0A1628)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.4rem",border:"3px solid var(--gold)",boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}>
+                    {initials(currentUser.name)}
+                  </div>
+                }
+                <div style={{position:"absolute",bottom:2,right:2,width:16,height:16,borderRadius:"50%",background:"var(--green)",border:"2px solid white"}}/>
+              </div>
+              <div style={{fontFamily:"Playfair Display,serif",fontSize:"0.92rem",fontWeight:700,color:"white",lineHeight:1.2}}>{currentUser.name}</div>
+              <div style={{fontSize:"0.62rem",color:"var(--gold)",textTransform:"uppercase",letterSpacing:"0.8px",marginTop:3,fontWeight:700}}>{roleLabel}</div>
+              <div style={{fontSize:"0.55rem",color:"rgba(255,255,255,0.35)",marginTop:4}}>🔥 Live synced</div>
             </div>
             {navSections.map(section=>(
               <div key={section.label}>

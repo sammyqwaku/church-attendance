@@ -932,6 +932,23 @@ export default function App(){
     deleteData("church_currentUser");
   }, []);
 
+  // ── QR CHECK-IN URL HANDLER ──────────────────────────────────
+  // When a member scans a group QR code, the URL contains ?checkin=groupId
+  // This effect detects it and auto-opens the check-in page
+  useEffect(() => {
+    if(groups.length===0) return; // wait for groups to load from Firebase
+    const params=new URLSearchParams(window.location.search);
+    const gid=params.get("checkin");
+    if(gid){
+      const grp=groups.find(g=>g.id===gid);
+      if(grp){
+        setCheckInGroup(grp);
+        // Clean the URL so refreshing doesn't re-trigger
+        window.history.replaceState({},"",window.location.pathname);
+      }
+    }
+  },[groups]);
+
   // ── SESSION TIMEOUT — auto sign out after 30 minutes of inactivity ──
   const lastActivityRef = useRef(Date.now());
   const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -2072,7 +2089,7 @@ export default function App(){
             {/* QR code visual */}
             <div style={{display:"flex",justifyContent:"center",margin:"10px 0"}}>
               <div style={{padding:12,border:`3px solid ${selectedGroup.color}`,borderRadius:14,background:"white",boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
-                <RealQRCode value={`https://yourchurch.vercel.app/?checkin=${selectedGroup.id}`} size={180} color={selectedGroup.color}/>
+                <RealQRCode value={`${window.location.origin}/?checkin=${selectedGroup.id}`} size={180} color={selectedGroup.color}/>
               </div>
             </div>
 
@@ -2102,14 +2119,15 @@ export default function App(){
 
         {/* Info card */}
         <div className="card" style={{background:"#EEF6FF",border:"1.5px solid #2980B9"}}>
-          <div className="card-title" style={{color:"#1A5276"}}>ℹ️ Making QR Codes Scannable by Phone</div>
+          <div className="card-title" style={{color:"#1A5276"}}>ℹ️ How to Use QR Codes</div>
           <p style={{fontSize:"0.78rem",color:"#2C3E50",lineHeight:1.6}}>
-            To make these QR codes work with real phones:<br/><br/>
-            1. <strong>Host the app online</strong> (Vercel, Netlify – free)<br/>
-            2. Each group QR encodes a URL like:<br/>
-            <code style={{background:"#D6EAF8",padding:"2px 6px",borderRadius:4,fontSize:"0.72rem"}}>yoursite.com/?checkin=g1</code><br/><br/>
-            3. When scanned, that URL opens the check-in page for that group directly.<br/><br/>
-            The "Simulate QR Scan" button above demonstrates exactly how it works.
+            ✅ <strong>QR codes are fully active!</strong><br/><br/>
+            1. Print or display the QR code on a screen at the group entrance<br/>
+            2. Members open their phone camera and scan it<br/>
+            3. The check-in page opens automatically in their browser<br/>
+            4. Member taps their name — attendance is marked instantly<br/><br/>
+            <strong>Your live app URL:</strong><br/>
+            <code style={{background:"#D6EAF8",padding:"2px 6px",borderRadius:4,fontSize:"0.72rem",wordBreak:"break-all"}}>{window.location.origin}</code>
           </p>
         </div>
       </div>

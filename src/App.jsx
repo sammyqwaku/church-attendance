@@ -378,6 +378,7 @@ const STYLE = `
   .stat-num{font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--navy);}
   .stat-label{font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-top:1px;}
 
+  /* ── LOGIN PAGE — mobile: stacked, desktop: two columns ── */
   .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     background:linear-gradient(160deg,var(--navy) 0%,var(--navy-mid) 55%,var(--gold) 100%);padding:30px 20px;}
   .login-card{background:white;border-radius:20px;padding:28px 22px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
@@ -385,12 +386,46 @@ const STYLE = `
   .login-logo .cross{font-size:2.6rem;}
   .login-logo h2{font-family:'Playfair Display',serif;color:var(--navy);font-size:1.35rem;}
   .login-logo p{color:var(--muted);font-size:0.78rem;margin-top:3px;}
+  .login-brand{display:none;}
   .role-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;}
   .role-btn{padding:10px 6px;border:2px solid var(--cream-dark);border-radius:10px;background:white;
     cursor:pointer;text-align:center;transition:all 0.15s;font-family:'Lato',sans-serif;}
   .role-btn.selected{border-color:var(--gold);background:#FEF9EF;}
   .role-btn .role-icon{font-size:1.4rem;display:block;margin-bottom:3px;}
   .role-btn .role-name{font-size:0.72rem;font-weight:700;color:var(--navy);}
+
+  /* ── DESKTOP LOGIN: full screen two-column layout ── */
+  @media(min-width:768px){
+    .login-wrap{flex-direction:row;align-items:stretch;padding:0;border-radius:0;}
+    .login-brand{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      flex:1;padding:60px 40px;
+      background:linear-gradient(160deg,var(--navy) 0%,var(--navy-mid) 60%,#1a3a6b 100%);
+      text-align:center;position:relative;overflow:hidden;
+    }
+    .login-brand::before{
+      content:"";position:absolute;inset:0;
+      background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+    .login-brand-content{position:relative;z-index:1;}
+    .login-brand h1{
+      font-family:'Playfair Display',serif;color:var(--gold-light);
+      font-size:2.4rem;line-height:1.2;margin-bottom:16px;
+    }
+    .login-brand p{color:rgba(255,255,255,0.65);font-size:1rem;line-height:1.7;max-width:420px;margin-bottom:40px;}
+    .login-brand-features{display:flex;flex-direction:column;gap:14px;text-align:left;max-width:380px;}
+    .login-brand-feature{display:flex;align-items:center;gap:12px;color:rgba(255,255,255,0.8);font-size:0.88rem;}
+    .login-brand-feature span:first-child{font-size:1.3rem;width:32px;text-align:center;flex-shrink:0;}
+    .login-right{
+      display:flex;align-items:center;justify-content:center;
+      width:420px;flex-shrink:0;background:var(--cream);padding:40px 48px;
+    }
+    .login-card{
+      border-radius:16px;padding:36px 32px;max-width:none;width:100%;
+      box-shadow:0 8px 32px rgba(0,0,0,0.12);
+    }
+    .login-logo h2{font-size:1.5rem;}
+  }
 
   .alert{margin:8px 12px;padding:9px 13px;border-radius:8px;font-size:0.8rem;font-weight:600;}
   .alert-success{background:#D5F5E3;color:#1E8449;border-left:4px solid var(--green);}
@@ -1378,6 +1413,34 @@ export default function App(){
       <>
         <style>{STYLE}</style>
         <div className="login-wrap">
+          {/* Left brand panel — desktop only */}
+          <div className="login-brand">
+            <div className="login-brand-content">
+              <div style={{fontSize:"4rem",marginBottom:16}}>⛪</div>
+              <h1>COP - Christ Temple<br/>Assembly</h1>
+              <p>A secure, modern church management system built for your assembly. Real-time attendance, financial records and monthly reports — all in one place.</p>
+              <div className="login-brand-features">
+                {[
+                  ["✅","Real-time attendance tracking"],
+                  ["📊","Live dashboard for Pastor"],
+                  ["📝","Financial & spiritual records"],
+                  ["👥","Member profiles with photos"],
+                  ["📅","Monthly analysis & reports"],
+                  ["🔐","Secure PIN-based access"],
+                ].map(([icon,text])=>(
+                  <div className="login-brand-feature" key={text}>
+                    <span>{icon}</span><span>{text}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:32,padding:"12px 20px",background:"rgba(255,255,255,0.08)",borderRadius:10,border:"1px solid rgba(201,151,58,0.4)"}}>
+                <div style={{color:"var(--gold)",fontSize:"0.75rem",fontWeight:700,marginBottom:4}}>🔒 ENTERPRISE SECURITY</div>
+                <div style={{color:"rgba(255,255,255,0.55)",fontSize:"0.72rem"}}>Firebase Authentication · SHA-256 PIN hashing · Session timeout · Audit logging</div>
+              </div>
+            </div>
+          </div>
+          {/* Right login form */}
+          <div className="login-right">
           <div className="login-card">
             <div className="login-logo">
               <div className="cross">⛪</div>
@@ -1411,6 +1474,7 @@ export default function App(){
               🔒 <strong>Privacy Notice:</strong> This app collects and stores church attendance and financial data solely for internal church management purposes. All data is stored securely on Google Firebase servers and is accessible only to authorised church staff. By signing in, you consent to this data usage. Data is not shared with third parties.
             </div>
           </div>
+          </div>{/* end login-right */}
         </div>
       </>
     );

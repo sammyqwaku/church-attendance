@@ -1471,7 +1471,7 @@ export default function App(){
 
             {/* Privacy Notice */}
             <div style={{marginTop:16,padding:"10px 12px",background:"#F8F9FA",borderRadius:8,fontSize:"0.68rem",color:"#888",lineHeight:1.6,textAlign:"center"}}>
-              🔒 <strong>Privacy Notice:</strong> This app collects and stores church attendance and financial data solely for internal church management purposes. All data is stored securely on Google Firebase servers and is accessible only to authorised church staff. By signing in, you consent to this data usage. Data is not shared with third parties.
+              🔒 <strong>Privacy Notice:</strong> This app collects and stores church attendance and financial data solely for internal church management purposes. All data is stored securely on encrypted cloud servers and is accessible only to authorised church staff. By signing in, you consent to this data usage. Data is not shared with third parties.
             </div>
           </div>
           </div>{/* end login-right */}
@@ -2596,7 +2596,7 @@ export default function App(){
         <div className="card" style={{border:"1.5px solid var(--gold)",background:"#FFFDF5"}}>
           <div style={{fontFamily:"Playfair Display,serif",fontWeight:700,fontSize:"0.92rem",color:"var(--navy)",marginBottom:6}}>Export Full Backup</div>
           <div style={{fontSize:"0.78rem",color:"var(--muted)",marginBottom:12,lineHeight:1.5}}>
-            Downloads all attendance records, daily reports, members and users as a JSON file. Keep it somewhere safe in case of data loss.
+            Downloads all attendance records, daily reports, members and users as a secure backup file. Keep it somewhere safe.
           </div>
           <button className="btn btn-primary btn-full" onClick={()=>{
             const backup={

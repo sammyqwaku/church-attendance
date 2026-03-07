@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { saveData, loadData, listenData, deleteData } from "./firebase";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
@@ -35,6 +35,103 @@ function useLocalStorage(key, initialValue) {
   }, [key]);
 
   return [storedValue, setValue, loaded];
+}
+
+// ─── MONTHLY ATTENDANCE HOOK ─────────────────────────────────
+// Splits attendance across monthly Firebase documents to stay
+// well under Firestore's 1MB document limit even for 500+ members.
+// Each monthly doc holds ~50-100KB max (500 members × 30 days).
+// Covers current month + 11 previous months on load (full year).
+// Returns same [attendance, setAttendance, loaded] interface.
+function useMonthlyAttendance() {
+  const [monthlyDocs, setMonthlyDocs] = useState({});
+  const [loadedMonths, setLoadedMonths] = useState({});
+  const [loaded, setLoaded] = useState(false);
+  const unsubsRef = useRef({});
+
+  // Generate keys for current month + past 11 months (full year)
+  function getMonthKeys() {
+    const keys = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const yr = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      keys.push(`church_att_${yr}_${mo}`);
+    }
+    return keys;
+  }
+
+  // Subscribe to all monthly docs on mount
+  useEffect(() => {
+    const monthKeys = getMonthKeys();
+    let resolvedCount = 0;
+
+    monthKeys.forEach(key => {
+      // Load initial value
+      loadData(key, {}).then(val => {
+        setMonthlyDocs(prev => ({ ...prev, [key]: val || {} }));
+        setLoadedMonths(prev => ({ ...prev, [key]: true }));
+        resolvedCount++;
+        if (resolvedCount === monthKeys.length) setLoaded(true);
+      });
+
+      // Listen for real-time updates
+      const unsub = listenData(key, val => {
+        setMonthlyDocs(prev => ({ ...prev, [key]: val || {} }));
+      });
+      unsubsRef.current[key] = unsub;
+    });
+
+    return () => {
+      Object.values(unsubsRef.current).forEach(fn => fn && fn());
+    };
+  }, []);
+
+  // Merge all monthly docs into one flat attendance object
+  const attendance = useMemo(() => {
+    const merged = {};
+    Object.values(monthlyDocs).forEach(doc => Object.assign(merged, doc));
+    return merged;
+  }, [monthlyDocs]);
+
+  // Smart setter — routes each key to the correct monthly doc
+  const setAttendance = useCallback((updater) => {
+    setMonthlyDocs(prevDocs => {
+      // Build current full merged state
+      const current = {};
+      Object.values(prevDocs).forEach(doc => Object.assign(current, doc));
+
+      // Apply updater
+      const next = typeof updater === "function" ? updater(current) : updater;
+
+      // Group changed keys by month
+      const byMonth = {};
+      Object.keys(next).forEach(k => {
+        const datePart = k.split("|")[0]; // "2026-01-15"
+        if (!datePart || datePart.length < 7) return;
+        const yr = datePart.slice(0, 4);
+        const mo = datePart.slice(5, 7);
+        const mKey = `church_att_${yr}_${mo}`;
+        if (!byMonth[mKey]) byMonth[mKey] = {};
+        byMonth[mKey][k] = next[k];
+      });
+
+      // Save each affected monthly doc to Firebase
+      Object.entries(byMonth).forEach(([mKey, doc]) => {
+        saveData(mKey, doc);
+      });
+
+      // Rebuild monthlyDocs with updated months
+      const newDocs = { ...prevDocs };
+      Object.entries(byMonth).forEach(([mKey, doc]) => {
+        newDocs[mKey] = doc;
+      });
+      return newDocs;
+    });
+  }, []);
+
+  return [attendance, setAttendance, loaded];
 }
 
 // ─── REAL QR CODE using qrcode-generator ─────────────────────────
@@ -985,7 +1082,7 @@ export default function App(){
   const [groups,       setGroups,       grpLoaded]  = useLocalStorage("church_groups",       initGroups);
   const [members,      setMembers,      memLoaded]  = useLocalStorage("church_members",      initMembers);
   const [users,        setUsers,        usrLoaded]  = useLocalStorage("church_users",        initUsers);
-  const [attendance,   setAttendance,   attLoaded]  = useLocalStorage("church_attendance",   {});
+  const [attendance,   setAttendance,   attLoaded]  = useMonthlyAttendance();
   const [dailyReports, setDailyReports, rptLoaded]  = useLocalStorage("church_dailyreports", {});
   const [submittedAtt, setSubmittedAtt, subLoaded]  = useLocalStorage("church_submittedAtt", {});
   const appReady = grpLoaded && memLoaded && usrLoaded && attLoaded && rptLoaded && subLoaded; // {groupId_date: true}
@@ -2340,7 +2437,9 @@ export default function App(){
             const backup={
               exportedAt:new Date().toISOString(),
               church:"COP - Christ Temple Assembly",
-              attendance,dailyReports,submittedAtt,members,groups,users:users.map(u=>({...u,pin:"[protected]"}))
+              note:"Attendance stored across monthly documents for scalability (500+ members)",
+              attendance,dailyReports,submittedAtt,members,groups,
+              users:users.map(u=>({...u,pin:"[protected]"}))
             };
             const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
             const url=URL.createObjectURL(blob);

@@ -1,5 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import CHURCH_CONFIG from "./churchConfig";
+
+// ═══════════════════════════════════════════════════════════════
+// CHURCH CONFIGURATION — edit these values for each assembly
+// ═══════════════════════════════════════════════════════════════
+const CHURCH_CONFIG = {
+  CHURCH_NAME:       "COP - Christ Temple Assembly",
+  CHURCH_SHORT_NAME: "Christ Temple",
+  CHURCH_ICON:       "⛪",
+  CHURCH_SUBTITLE:   "Select your role and enter PIN",
+  CHURCH_LOCATION:   "Ghana",
+  CURRENCY:          "GHS",
+  LEGACY_SALT:       "cop_christ_temple_salt",
+  SERVICE_TYPES:     ["Sunday Morning", "Mid-Week", "Friday Evening"],
+  SERVICE_ICONS:     {"Sunday Morning":"☀️","Mid-Week":"📖","Friday Evening":"🌙"},
+  MEMBER_CATEGORIES: ["Elder","Deacon","Deaconess","Male","Female","Children"],
+  COLOR_NAVY:        "#1A2744",
+  COLOR_GOLD:        "#C9973A",
+  COLOR_GREEN:       "#27AE60",
+};
+// ═══════════════════════════════════════════════════════════════
 import { saveData, loadData, listenData, deleteData, authReady } from "./firebase";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 

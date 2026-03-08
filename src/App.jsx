@@ -617,6 +617,26 @@ function GroupCheckIn({group, members, attendance, setAttendance, onBack}){
 
   useEffect(()=>()=>stopCamera(),[]);
 
+  // Attach camera stream to video element once it appears in DOM
+  useEffect(()=>{
+    if(faceStatus==='scanning'&&streamRef.current&&videoRef.current){
+      const video=videoRef.current;
+      video.srcObject=streamRef.current;
+      video.setAttribute('autoplay','');
+      video.setAttribute('muted','');
+      video.setAttribute('playsinline','');
+      const playPromise=video.play();
+      if(playPromise!==undefined){
+        playPromise.catch(e=>console.warn('Video play error:',e));
+      }
+      // Wait for camera to warm up then scan
+      const timer=setTimeout(()=>{
+        if(scanningRef.current) runFaceScan();
+      },3000);
+      return()=>clearTimeout(timer);
+    }
+  },[faceStatus]);
+
   const doCheckIn=(m)=>{
     setAttendance(p=>({...p,[attKey(date,m.id)]:true}));
     sessionStorage.setItem(deviceKey,m.id);
@@ -659,14 +679,21 @@ function GroupCheckIn({group, members, attendance, setAttendance, onBack}){
 
   const startCamera=async()=>{
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:320,height:240}});
+      const constraints={
+        video:{
+          facingMode:'user',
+          width:{ideal:320},
+          height:{ideal:240}
+        }
+      };
+      const stream=await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current=stream;
-      if(videoRef.current){videoRef.current.srcObject=stream;}
+      // Set scanning FIRST so React renders the <video> element
+      // then useEffect will attach the stream once videoRef is ready
       setFaceStatus('scanning');
       scanningRef.current=true;
-      // Give camera 2.5s to warm up then scan
-      setTimeout(()=>runFaceScan(),2500);
     }catch(e){
+      console.error('Camera error:',e);
       setFaceStatus('camera_error');
     }
   };
@@ -940,8 +967,11 @@ function GroupCheckIn({group, members, attendance, setAttendance, onBack}){
           {faceStatus==='scanning'&&(
             <div style={{textAlign:"center"}}>
               <div style={{position:"relative",display:"inline-block",marginBottom:10}}>
-                <video ref={videoRef} autoPlay muted playsInline
-                  style={{width:"100%",maxWidth:280,borderRadius:16,border:"3px solid #C9973A",
+                <video ref={videoRef}
+                  autoPlay muted playsInline
+                  onLoadedMetadata={e=>e.target.play().catch(()=>{})}
+                  style={{width:"100%",maxWidth:280,minHeight:180,borderRadius:16,
+                    border:"3px solid #C9973A",background:"#000",
                     transform:"scaleX(-1)",display:"block",margin:"0 auto"}}/>
                 <div style={{position:"absolute",inset:0,borderRadius:16,border:"3px solid #C9973A",
                   boxShadow:"0 0 0 4px rgba(201,151,58,0.2)",pointerEvents:"none"}}/>
@@ -949,13 +979,22 @@ function GroupCheckIn({group, members, attendance, setAttendance, onBack}){
               <div style={{fontWeight:700,color:"#1A2744",fontSize:"0.85rem",marginBottom:4}}>
                 👀 Look directly at the camera
               </div>
-              <div style={{fontSize:"0.7rem",color:"#7A7A7A",marginBottom:12}}>Scanning your face...</div>
-              <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:14}}>
+              <div style={{fontSize:"0.7rem",color:"#7A7A7A",marginBottom:8}}>Scanning your face...</div>
+              <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:8}}>
                 {[0,1,2].map(i=>(
                   <div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#C9973A",
                     animation:`bounce 1s ease-in-out ${i*0.2}s infinite`}}/>
                 ))}
               </div>
+              <div style={{fontSize:"0.68rem",color:"#7A7A7A",marginBottom:10,textAlign:"center"}}>
+                Make sure your face is well lit and clearly visible
+              </div>
+              <button className="btn btn-outline" style={{fontSize:"0.75rem",padding:"7px 18px",margin:"0 auto",display:"block"}}
+                onClick={()=>{
+                  if(scanningRef.current) runFaceScan();
+                }}>
+                🔄 Scan Now
+              </button>
             </div>
           )}
 

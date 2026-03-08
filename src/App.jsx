@@ -590,66 +590,484 @@ function DatePicker({value,onChange}){
 //  GROUP CHECK-IN PAGE  (accessed via simulated QR scan)
 // ═══════════════════════════════════════════════════════════════════
 function GroupCheckIn({group, members, attendance, setAttendance, onBack}){
+  const [mode,setMode]=useState(null);         // null | 'search' | 'face'
+  const [search,setSearch]=useState('');
   const [selectedMember,setSelectedMember]=useState(null);
   const [checkedIn,setCheckedIn]=useState(null);
+  const [faceStatus,setFaceStatus]=useState('idle'); // idle|loading|scanning|matched|no_face|no_match|failed|no_photos
+  const [faceMatch,setFaceMatch]=useState(null);
+  const [faceRetry,setFaceRetry]=useState(0);
+  const videoRef=useRef(null);
+  const streamRef=useRef(null);
+  const scanningRef=useRef(false);
+
   const date=todayStr();
   const attKey=(d,mid)=>`${d}|${mid}`;
   const gMembers=members.filter(m=>m.groupId===group.id);
+  const membersWithPhotos=gMembers.filter(m=>m.photo);
+
+  // One check-in per device per service (sessionStorage)
+  const deviceKey=`checkin_${group.id}_${date}`;
+  const alreadyUsed=sessionStorage.getItem(deviceKey);
+
+  const stopCamera=()=>{
+    scanningRef.current=false;
+    if(streamRef.current){streamRef.current.getTracks().forEach(t=>t.stop());streamRef.current=null;}
+  };
+
+  useEffect(()=>()=>stopCamera(),[]);
 
   const doCheckIn=(m)=>{
     setAttendance(p=>({...p,[attKey(date,m.id)]:true}));
-    setCheckedIn(m); setSelectedMember(null);
+    sessionStorage.setItem(deviceKey,m.id);
+    setCheckedIn(m);
+    setSelectedMember(null);
+    stopCamera();
   };
 
-  if(checkedIn){
-    return (
+  // ── Search filtered members ────────────────────────────────
+  const filtered=search.length>=2
+    ?gMembers.filter(m=>m.name.toLowerCase().includes(search.toLowerCase()))
+    :[];
+
+  // ── Load face-api.js and models ───────────────────────────
+  const loadFaceApi=async()=>{
+    setFaceStatus('loading');
+    try{
+      if(!window.faceapi){
+        await new Promise((res,rej)=>{
+          const s=document.createElement('script');
+          s.src='https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js';
+          s.onload=res; s.onerror=rej;
+          document.head.appendChild(s);
+        });
+      }
+      const MODEL_URL='https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+      const fa=window.faceapi;
+      if(!fa.nets.tinyFaceDetector.isLoaded)
+        await fa.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      if(!fa.nets.faceLandmark68TinyNet.isLoaded)
+        await fa.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+      if(!fa.nets.faceRecognitionNet.isLoaded)
+        await fa.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      await startCamera();
+    }catch(e){
+      console.error('Face API load error:',e);
+      setFaceStatus('failed');
+    }
+  };
+
+  const startCamera=async()=>{
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:320,height:240}});
+      streamRef.current=stream;
+      if(videoRef.current){videoRef.current.srcObject=stream;}
+      setFaceStatus('scanning');
+      scanningRef.current=true;
+      // Give camera 2.5s to warm up then scan
+      setTimeout(()=>runFaceScan(),2500);
+    }catch(e){
+      setFaceStatus('camera_error');
+    }
+  };
+
+  // Build HTMLImageElement from base64
+  const base64ToImg=async(src)=>{
+    return new Promise((res,rej)=>{
+      const img=new Image();
+      img.crossOrigin='anonymous';
+      img.onload=()=>res(img);
+      img.onerror=rej;
+      img.src=src;
+    });
+  };
+
+  const runFaceScan=async()=>{
+    if(!scanningRef.current||!window.faceapi||!videoRef.current) return;
+    const fa=window.faceapi;
+    const opts=new fa.TinyFaceDetectorOptions({inputSize:224,scoreThreshold:0.4});
+
+    try{
+      // Build labeled descriptors from member photos
+      if(membersWithPhotos.length===0){setFaceStatus('no_photos');return;}
+      const labeled=[];
+      for(const m of membersWithPhotos){
+        try{
+          const img=await base64ToImg(m.photo);
+          const det=await fa.detectSingleFace(img,opts).withFaceLandmarks(true).withFaceDescriptor();
+          if(det) labeled.push(new fa.LabeledFaceDescriptors(m.id,[det.descriptor]));
+        }catch(e){}
+      }
+      if(labeled.length===0){setFaceStatus('no_photos');return;}
+
+      const matcher=new fa.FaceMatcher(labeled,0.5);
+
+      // Detect from live video
+      const detection=await fa.detectSingleFace(videoRef.current,opts)
+        .withFaceLandmarks(true).withFaceDescriptor();
+
+      if(!detection){setFaceStatus('no_face');return;}
+
+      const best=matcher.findBestMatch(detection.descriptor);
+      if(best.label!=='unknown'){
+        const matched=gMembers.find(m=>m.id===best.label);
+        if(matched){
+          stopCamera();
+          setFaceMatch(matched);
+          setFaceStatus('matched');
+          return;
+        }
+      }
+      setFaceStatus('no_match');
+    }catch(e){
+      console.error('Scan error:',e);
+      setFaceStatus('failed');
+    }
+  };
+
+  const retryFace=()=>{
+    setFaceStatus('loading');
+    setFaceMatch(null);
+    setFaceRetry(r=>r+1);
+    stopCamera();
+    setTimeout(()=>loadFaceApi(),300);
+  };
+
+  const grp=group;
+
+  // ── Already checked in on this device ─────────────────────
+  if(alreadyUsed){
+    const who=gMembers.find(m=>m.id===alreadyUsed);
+    return(
       <div className="checkin-page">
-        <div className="checkin-card">
-          <div style={{fontSize:"3.5rem",marginBottom:8}}>✅</div>
-          <h2>Welcome!</h2>
-          <p style={{fontSize:"1rem",color:"var(--navy)",fontWeight:700,margin:"6px 0 4px"}}>{checkedIn.name}</p>
-          <p style={{color:"var(--green)",fontWeight:700,fontSize:"0.9rem"}}>Attendance marked for {formatDate(date)}</p>
-          <p style={{fontSize:"0.75rem",color:"var(--muted)",margin:"4px 0 18px"}}>{group.name} Group</p>
-          <button className="btn btn-navy btn-full" onClick={()=>setCheckedIn(null)}>Check In Another Member</button>
-          <button className="btn btn-outline btn-full" style={{marginTop:8}} onClick={onBack}>← Back to App</button>
+        <div className="checkin-card" style={{textAlign:"center"}}>
+          <div style={{fontSize:"3rem",marginBottom:8}}>✅</div>
+          <h2 style={{color:"#1A2744"}}>Already Checked In</h2>
+          <p style={{color:"#27AE60",fontWeight:700,fontSize:"1rem",margin:"8px 0 4px"}}>{who?who.name:"Member"}</p>
+          <p style={{color:"#7A7A7A",fontSize:"0.8rem",marginBottom:16}}>You have already checked in for {formatDate(date)}.</p>
+          <button className="btn btn-outline btn-full" onClick={onBack}>← Back</button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="checkin-page">
-      <div className="checkin-card">
-        <div style={{fontSize:"2.2rem",marginBottom:6}}>⛪</div>
-        <h2>{group.name} Group</h2>
-        <p>Select your name to mark attendance for {formatDate(date)}</p>
-        <div style={{maxHeight:320,overflowY:"auto",textAlign:"left"}}>
-          {gMembers.map(m=>{
-            const already=attendance[attKey(date,m.id)]===true;
-            return (
-              <div key={m.id} onClick={()=>!already&&doCheckIn(m)}
-                style={{display:"flex",alignItems:"center",gap:10,padding:"10px 8px",
-                  borderRadius:10,marginBottom:6,cursor:already?"default":"pointer",
-                  background:already?"#D5F5E3":"#F8F9FA",border:`1.5px solid ${already?"#27AE60":"#eee"}`,
-                  transition:"all 0.15s"}}>
-                <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${group.color},#1A2744)`,
-                  display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.78rem",flexShrink:0}}>
-                  {initials(m.name)}
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:"0.85rem",color:"#1A2744"}}>{m.name}</div>
-                  <div style={{fontSize:"0.65rem",color:"#7A7A7A"}}>{CAT_ICONS[m.category]} {m.category}</div>
-                </div>
-                {already&&<span style={{fontSize:"1.2rem"}}>✅</span>}
-              </div>
-            );
-          })}
+  // ── Success screen ─────────────────────────────────────────
+  if(checkedIn){
+    return(
+      <div className="checkin-page">
+        <div className="checkin-card" style={{textAlign:"center"}}>
+          <div style={{fontSize:"3.5rem",marginBottom:8}}>🙌</div>
+          <h2 style={{color:"#1A2744"}}>Welcome!</h2>
+          <p style={{fontSize:"1.05rem",color:"#1A2744",fontWeight:700,margin:"6px 0 4px"}}>{checkedIn.name}</p>
+          <p style={{color:"#27AE60",fontWeight:700,fontSize:"0.85rem"}}>Attendance marked for {formatDate(date)}</p>
+          <p style={{fontSize:"0.72rem",color:"#7A7A7A",margin:"4px 0 18px"}}>{group.name} Group</p>
+          <button className="btn btn-outline btn-full" onClick={onBack}>← Done</button>
         </div>
-        <button className="btn btn-outline btn-full" style={{marginTop:12,fontSize:"0.75rem"}} onClick={onBack}>← Back to App</button>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // ── Mode selection screen ──────────────────────────────────
+  if(!mode){
+    return(
+      <div className="checkin-page">
+        <div className="checkin-card">
+          <div style={{textAlign:"center",marginBottom:16}}>
+            <div style={{fontSize:"2.2rem",marginBottom:6}}>⛪</div>
+            <h2 style={{color:"#1A2744",marginBottom:4}}>{group.name}</h2>
+            <p style={{fontSize:"0.78rem",color:"#7A7A7A",margin:0}}>{CHURCH_CONFIG.CHURCH_NAME}</p>
+            <p style={{fontSize:"0.72rem",color:"#7A7A7A",marginTop:2}}>{formatDate(date)}</p>
+          </div>
+
+          <div style={{background:"#FDF8F0",borderRadius:12,padding:"12px 14px",marginBottom:16,textAlign:"center"}}>
+            <div style={{fontSize:"0.78rem",color:"#1A2744",fontWeight:700}}>How would you like to check in?</div>
+          </div>
+
+          {/* Option 1 — Search name */}
+          <button onClick={()=>setMode('search')}
+            style={{width:"100%",padding:"16px 14px",background:"#1A2744",color:"white",border:"none",
+              borderRadius:14,marginBottom:10,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{fontSize:"1.8rem",flexShrink:0}}>🔍</div>
+            <div>
+              <div style={{fontWeight:700,fontSize:"0.92rem"}}>Search My Name</div>
+              <div style={{fontSize:"0.72rem",opacity:0.7,marginTop:2}}>Type your name and confirm you are here</div>
+            </div>
+          </button>
+
+          {/* Option 2 — Face recognition */}
+          <button onClick={()=>{setMode('face');loadFaceApi();}}
+            style={{width:"100%",padding:"16px 14px",
+              background:membersWithPhotos.length===0?"#E8E8E8":"linear-gradient(135deg,#C9973A,#E8C070)",
+              color:membersWithPhotos.length===0?"#999":"#1A2744",border:"none",
+              borderRadius:14,marginBottom:14,cursor:membersWithPhotos.length===0?"not-allowed":"pointer",
+              textAlign:"left",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{fontSize:"1.8rem",flexShrink:0}}>📷</div>
+            <div>
+              <div style={{fontWeight:700,fontSize:"0.92rem"}}>Face Recognition</div>
+              <div style={{fontSize:"0.72rem",opacity:0.75,marginTop:2}}>
+                {membersWithPhotos.length===0
+                  ?"No member photos uploaded yet"
+                  :`Scan your face to check in automatically (${membersWithPhotos.length} photos on file)`}
+              </div>
+            </div>
+          </button>
+
+          <button className="btn btn-outline btn-full" style={{fontSize:"0.75rem"}} onClick={onBack}>← Back to App</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Search mode ────────────────────────────────────────────
+  if(mode==='search'){
+    return(
+      <div className="checkin-page">
+        <div className="checkin-card">
+          <div style={{textAlign:"center",marginBottom:14}}>
+            <div style={{fontSize:"1.8rem",marginBottom:4}}>🔍</div>
+            <h2 style={{color:"#1A2744",marginBottom:2}}>Find Your Name</h2>
+            <p style={{fontSize:"0.75rem",color:"#7A7A7A",margin:0}}>Type at least 2 letters of your name</p>
+          </div>
+
+          <input
+            className="input"
+            placeholder="Start typing your name..."
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            autoFocus
+            style={{marginBottom:10,fontSize:"0.95rem"}}
+          />
+
+          {search.length>0&&search.length<2&&(
+            <p style={{fontSize:"0.72rem",color:"#C9973A",textAlign:"center",margin:"4px 0 8px"}}>Keep typing...</p>
+          )}
+
+          {/* Results */}
+          {filtered.length>0&&!selectedMember&&(
+            <div style={{maxHeight:240,overflowY:"auto",marginBottom:10}}>
+              {filtered.map(m=>{
+                const already=attendance[attKey(date,m.id)]===true;
+                return(
+                  <div key={m.id} onClick={()=>!already&&setSelectedMember(m)}
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"10px 10px",
+                      borderRadius:10,marginBottom:6,cursor:already?"default":"pointer",
+                      background:already?"#D5F5E3":"#F0F4FF",
+                      border:`1.5px solid ${already?"#27AE60":"#C5CAE9"}`,transition:"all 0.15s"}}>
+                    <div style={{width:36,height:36,borderRadius:"50%",overflow:"hidden",flexShrink:0,
+                      background:`linear-gradient(135deg,${group.color||"#888"},#1A2744)`,
+                      display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"0.8rem"}}>
+                      {m.photo
+                        ?<img src={m.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                        :initials(m.name)}
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:"0.88rem",color:"#1A2744"}}>{m.name}</div>
+                      <div style={{fontSize:"0.65rem",color:"#7A7A7A"}}>{CAT_ICONS[m.category]||""} {m.category}</div>
+                    </div>
+                    {already?<span style={{fontSize:"1.2rem"}}>✅</span>:<span style={{fontSize:"0.72rem",color:"#1A2744",fontWeight:700}}>Tap →</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {search.length>=2&&filtered.length===0&&(
+            <p style={{textAlign:"center",color:"#7A7A7A",fontSize:"0.8rem",padding:"12px 0"}}>No member found. Check your spelling.</p>
+          )}
+
+          {/* Confirm screen */}
+          {selectedMember&&(
+            <div style={{background:"#F0F4FF",borderRadius:14,padding:"16px",textAlign:"center",marginBottom:10}}>
+              <div style={{width:60,height:60,borderRadius:"50%",overflow:"hidden",margin:"0 auto 10px",
+                background:`linear-gradient(135deg,${group.color||"#888"},#1A2744)`,
+                display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.2rem"}}>
+                {selectedMember.photo
+                  ?<img src={selectedMember.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  :initials(selectedMember.name)}
+              </div>
+              <div style={{fontWeight:700,color:"#1A2744",fontSize:"1rem",marginBottom:4}}>{selectedMember.name}</div>
+              <div style={{fontSize:"0.72rem",color:"#7A7A7A",marginBottom:14}}>{group.name} · {formatDate(date)}</div>
+              <div style={{fontSize:"0.82rem",color:"#1A2744",fontWeight:700,marginBottom:12}}>
+                Are you this person? Confirm your attendance below.
+              </div>
+              <button className="btn btn-success btn-full" style={{marginBottom:8,fontSize:"0.9rem",padding:"12px"}}
+                onClick={()=>doCheckIn(selectedMember)}>
+                ✅ Yes, I Am Here!
+              </button>
+              <button className="btn btn-outline btn-full" style={{fontSize:"0.8rem"}}
+                onClick={()=>setSelectedMember(null)}>
+                ✕ Not me — go back
+              </button>
+            </div>
+          )}
+
+          <button className="btn btn-outline btn-full" style={{fontSize:"0.75rem",marginTop:4}}
+            onClick={()=>{setMode(null);setSearch('');setSelectedMember(null);}}>
+            ← Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Face recognition mode ──────────────────────────────────
+  if(mode==='face'){
+    return(
+      <div className="checkin-page">
+        <div className="checkin-card">
+          <div style={{textAlign:"center",marginBottom:12}}>
+            <div style={{fontSize:"1.8rem",marginBottom:4}}>📷</div>
+            <h2 style={{color:"#1A2744",marginBottom:2}}>Face Recognition</h2>
+            <p style={{fontSize:"0.72rem",color:"#7A7A7A",margin:0}}>{group.name} · {formatDate(date)}</p>
+          </div>
+
+          {/* Loading models */}
+          {faceStatus==='loading'&&(
+            <div style={{textAlign:"center",padding:"20px 0"}}>
+              <div style={{fontSize:"2rem",marginBottom:10}}>⏳</div>
+              <div style={{fontWeight:700,color:"#1A2744",fontSize:"0.88rem",marginBottom:6}}>Loading face recognition...</div>
+              <div style={{fontSize:"0.72rem",color:"#7A7A7A"}}>This may take a moment on first use</div>
+              <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:14}}>
+                {[0,1,2].map(i=>(
+                  <div key={i} style={{width:8,height:8,borderRadius:"50%",background:"#C9973A",
+                    animation:`bounce 1s ease-in-out ${i*0.2}s infinite`}}/>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Camera scanning */}
+          {faceStatus==='scanning'&&(
+            <div style={{textAlign:"center"}}>
+              <div style={{position:"relative",display:"inline-block",marginBottom:10}}>
+                <video ref={videoRef} autoPlay muted playsInline
+                  style={{width:"100%",maxWidth:280,borderRadius:16,border:"3px solid #C9973A",
+                    transform:"scaleX(-1)",display:"block",margin:"0 auto"}}/>
+                <div style={{position:"absolute",inset:0,borderRadius:16,border:"3px solid #C9973A",
+                  boxShadow:"0 0 0 4px rgba(201,151,58,0.2)",pointerEvents:"none"}}/>
+              </div>
+              <div style={{fontWeight:700,color:"#1A2744",fontSize:"0.85rem",marginBottom:4}}>
+                👀 Look directly at the camera
+              </div>
+              <div style={{fontSize:"0.7rem",color:"#7A7A7A",marginBottom:12}}>Scanning your face...</div>
+              <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:14}}>
+                {[0,1,2].map(i=>(
+                  <div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#C9973A",
+                    animation:`bounce 1s ease-in-out ${i*0.2}s infinite`}}/>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Matched */}
+          {faceStatus==='matched'&&faceMatch&&(
+            <div style={{background:"#D5F5E3",borderRadius:14,padding:"16px",textAlign:"center",marginBottom:10}}>
+              <div style={{fontSize:"2rem",marginBottom:8}}>✅</div>
+              <div style={{fontWeight:700,color:"#1E8449",fontSize:"0.9rem",marginBottom:6}}>Face Recognised!</div>
+              <div style={{width:64,height:64,borderRadius:"50%",overflow:"hidden",margin:"0 auto 10px",
+                background:`linear-gradient(135deg,${group.color||"#888"},#1A2744)`,
+                display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:"1.2rem"}}>
+                {faceMatch.photo
+                  ?<img src={faceMatch.photo} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  :initials(faceMatch.name)}
+              </div>
+              <div style={{fontWeight:700,color:"#1A2744",fontSize:"1rem",marginBottom:4}}>{faceMatch.name}</div>
+              <div style={{fontSize:"0.72rem",color:"#7A7A7A",marginBottom:14}}>{group.name} · {formatDate(date)}</div>
+              <div style={{fontSize:"0.82rem",color:"#1A2744",fontWeight:700,marginBottom:10}}>
+                Is this you? Confirm your attendance:
+              </div>
+              <button className="btn btn-success btn-full" style={{marginBottom:8,fontSize:"0.9rem",padding:"12px"}}
+                onClick={()=>doCheckIn(faceMatch)}>
+                ✅ Yes, Mark Me Present!
+              </button>
+              <button className="btn btn-outline btn-full" style={{fontSize:"0.8rem"}}
+                onClick={retryFace}>
+                🔄 Not me — try again
+              </button>
+            </div>
+          )}
+
+          {/* No face detected */}
+          {(faceStatus==='no_face'||faceStatus==='no_match')&&(
+            <div style={{textAlign:"center",padding:"12px 0"}}>
+              <div style={{fontSize:"2rem",marginBottom:8}}>{faceStatus==='no_face'?"😐":"❓"}</div>
+              <div style={{fontWeight:700,color:"#1A2744",fontSize:"0.88rem",marginBottom:6}}>
+                {faceStatus==='no_face'?"No face detected":"Face not recognised"}
+              </div>
+              <div style={{fontSize:"0.72rem",color:"#7A7A7A",marginBottom:14}}>
+                {faceStatus==='no_face'
+                  ?"Make sure your face is clearly visible and well lit."
+                  :"Your face did not match any member on file. Make sure your photo is uploaded."}
+              </div>
+              <button className="btn btn-navy btn-full" style={{marginBottom:8}} onClick={retryFace}>🔄 Try Again</button>
+              <button className="btn btn-outline btn-full" style={{fontSize:"0.8rem"}}
+                onClick={()=>{stopCamera();setMode('search');setFaceStatus('idle');}}>
+                🔍 Use Name Search Instead
+              </button>
+            </div>
+          )}
+
+          {/* Camera error */}
+          {faceStatus==='camera_error'&&(
+            <div style={{textAlign:"center",padding:"12px 0"}}>
+              <div style={{fontSize:"2rem",marginBottom:8}}>📵</div>
+              <div style={{fontWeight:700,color:"#C0392B",fontSize:"0.88rem",marginBottom:6}}>Camera Access Denied</div>
+              <div style={{fontSize:"0.72rem",color:"#7A7A7A",marginBottom:14}}>
+                Please allow camera access in your browser settings and try again.
+              </div>
+              <button className="btn btn-outline btn-full"
+                onClick={()=>{stopCamera();setMode('search');setFaceStatus('idle');}}>
+                🔍 Use Name Search Instead
+              </button>
+            </div>
+          )}
+
+          {/* No photos */}
+          {faceStatus==='no_photos'&&(
+            <div style={{textAlign:"center",padding:"12px 0"}}>
+              <div style={{fontSize:"2rem",marginBottom:8}}>🖼️</div>
+              <div style={{fontWeight:700,color:"#C9973A",fontSize:"0.88rem",marginBottom:6}}>No Member Photos</div>
+              <div style={{fontSize:"0.72rem",color:"#7A7A7A",marginBottom:14}}>
+                No members in this group have profile photos yet. Ask your leader to upload photos first.
+              </div>
+              <button className="btn btn-outline btn-full"
+                onClick={()=>{stopCamera();setMode('search');setFaceStatus('idle');}}>
+                🔍 Use Name Search Instead
+              </button>
+            </div>
+          )}
+
+          {/* General failed */}
+          {faceStatus==='failed'&&(
+            <div style={{textAlign:"center",padding:"12px 0"}}>
+              <div style={{fontSize:"2rem",marginBottom:8}}>⚠️</div>
+              <div style={{fontWeight:700,color:"#C0392B",fontSize:"0.88rem",marginBottom:6}}>Something went wrong</div>
+              <div style={{fontSize:"0.72rem",color:"#7A7A7A",marginBottom:14}}>
+                Could not load face recognition. Check your internet connection and try again.
+              </div>
+              <button className="btn btn-navy btn-full" style={{marginBottom:8}} onClick={retryFace}>🔄 Retry</button>
+              <button className="btn btn-outline btn-full" style={{fontSize:"0.8rem"}}
+                onClick={()=>{stopCamera();setMode('search');setFaceStatus('idle');}}>
+                🔍 Use Name Search Instead
+              </button>
+            </div>
+          )}
+
+          {faceStatus!=='matched'&&faceStatus!=='no_face'&&faceStatus!=='no_match'
+            &&faceStatus!=='camera_error'&&faceStatus!=='no_photos'&&faceStatus!=='failed'&&(
+            <button className="btn btn-outline btn-full" style={{fontSize:"0.75rem",marginTop:4}}
+              onClick={()=>{stopCamera();setMode(null);setFaceStatus('idle');}}>
+              ← Back
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  PRINTABLE REPORT COMPONENT
